@@ -31,7 +31,8 @@ export function taskSchema(timezone) {
       .string()
       .trim()
       .superRefine((value, ctx) => {
-        const error = cronError(value, timezone);
+        // Vide = tâche manuelle (lancée uniquement à la demande).
+        const error = cronError(value, timezone, { allowEmpty: true });
         if (error) ctx.addIssue({ code: 'custom', message: error });
       }),
     allowed_tools: z

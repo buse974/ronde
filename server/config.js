@@ -36,6 +36,9 @@ export function loadConfig(env = process.env) {
     // Token Claude fourni par l'environnement : prioritaire sur celui saisi dans l'UI.
     envClaudeToken: env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY || null,
 
+    // Données de l'hôte lisibles par les rondes (scripts de host/).
+    hostDataDir: env.HOST_DATA_DIR || '/host-metrics',
+
     runner: {
       bin: env.CLAUDE_BIN || 'claude',
       path: env.RUNNER_PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',

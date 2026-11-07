@@ -17,14 +17,29 @@ import {
   sameOrigin,
   sessionMiddleware,
 } from './auth.js';
-import { DISK_TASK } from './examples.js';
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
+import { TEMPLATES, templateTask } from './examples.js';
+import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
+import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { createHelpers } from './helpers.js';
 import { classify, runClaude } from './runner.js';
 import { nextRuns, cronError } from './scheduler.js';
-import { emailSchema, issuesToErrors, parseTaskForm, setupSchema } from './validation.js';
+import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema } from './validation.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_SIZE = 50;
+
+/** URL publique et activation du MCP : OAuth exige HTTPS (sauf localhost). */
+export function mcpEndpoint(config) {
+  const base = new URL(config.publicUrl || `http://localhost:${config.port}`);
+  const local = ['localhost', '127.0.0.1'].includes(base.hostname);
+  return {
+    enabled: base.protocol === 'https:' || local,
+    issuer: new URL(base.origin),
+    url: new URL('/mcp', base.origin),
+  };
+}
 
 const asyncRoute = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -48,6 +63,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   const eta = new Eta({ views: path.join(ROOT, 'views'), cache: config.production });
   const h = createHelpers(config.timezone);
   const limiter = createRateLimiter();
+  const oauth = createOAuthProvider({ db: store.db });
+  const mcp = mcpEndpoint(config);
 
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy);
@@ -66,6 +83,30 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'ronde', type: 'app' }));
   app.use(express.static(path.join(ROOT, 'public'), { maxAge: config.production ? '1d' : 0 }));
+  // --- MCP (OAuth 2.1) : monté avant le contrôle Origin, car Claude Code
+  // appelle ces routes hors navigateur. --------------------------------------
+  if (mcp.enabled) {
+    app.use(
+      mcpAuthRouter({
+        provider: oauth,
+        issuerUrl: mcp.issuer,
+        resourceServerUrl: mcp.url,
+        scopesSupported: [MCP_SCOPE],
+        resourceName: 'ronde',
+      }),
+    );
+    const bearer = requireBearerAuth({
+      verifier: oauth,
+      requiredScopes: [MCP_SCOPE],
+      resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcp.url),
+    });
+    const handler = createMcpHandler({ store, config, claudeAuth, executor, oauth, hostDataDir: config.hostDataDir });
+    app.post('/mcp', bearer, express.json({ limit: '1mb' }), asyncRoute(handler));
+    app.all('/mcp', (req, res) =>
+      res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', error: { code: -32000, message: 'Méthode non autorisée.' }, id: null }),
+    );
+  }
+
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(cookieParser());
   app.use(sameOrigin());
@@ -147,13 +188,57 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect('/login');
   });
 
+  // --- Consentement OAuth (connexion de Claude Code au MCP) ---------------
+  const consentView = (res, reqId, pendingReq, req, extra = {}) => {
+    // La redirection finale part vers le callback du client : autorisée par la CSP de cette page.
+    res.set(
+      'Content-Security-Policy',
+      `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; form-action 'self' ${new URL(pendingReq.redirectUri).origin}`,
+    );
+    res.view('oauth-consent', { reqId, p: pendingReq, user: req.user, error: null, ...extra });
+  };
+
+  app.get('/oauth/consent', (req, res) => {
+    if (!isSetupDone(store)) return res.redirect('/setup');
+    const p = oauth.getPending(String(req.query.req ?? ''));
+    if (!p) return res.status(400).view('error', { message: 'Demande d’autorisation expirée. Relance la connexion depuis Claude Code (/mcp).' });
+    consentView(res, req.query.req, p, req);
+  });
+
+  app.post(
+    '/oauth/consent',
+    asyncRoute(async (req, res) => {
+      const reqId = String(req.body.req ?? '');
+      const p = oauth.getPending(reqId);
+      if (!p) return res.status(400).view('error', { message: 'Demande d’autorisation expirée. Relance la connexion depuis Claude Code (/mcp).' });
+      if (req.body.action === 'deny') return res.redirect(oauth.deny(reqId));
+
+      let username = req.user;
+      if (!username) {
+        if (limiter.blocked(req.ip)) {
+          res.status(429);
+          return consentView(res, reqId, p, req, { error: 'Trop de tentatives. Réessaie dans 15 minutes.' });
+        }
+        const candidate = String(req.body.username ?? '').trim();
+        if (!(await checkCredentials(store, candidate, String(req.body.password ?? '')))) {
+          limiter.fail(req.ip);
+          res.status(401);
+          return consentView(res, reqId, p, req, { error: 'Identifiant ou mot de passe incorrect.' });
+        }
+        limiter.reset(req.ip);
+        username = candidate;
+      }
+      res.redirect(oauth.approve(reqId, username));
+    }),
+  );
+
   // --- Tout ce qui suit exige d'être connecté ----------------------------
   app.use(requireAuth(store));
 
   app.get('/', (req, res) => res.redirect('/tasks'));
 
   app.get('/tasks', (req, res) => {
-    res.view('tasks', { tasks: store.listTasks(), tokenStatus: claudeAuth.status() });
+    res.view('tasks', { tasks: store.listTasks(), tokenStatus: claudeAuth.status(), templates: TEMPLATES });
   });
 
   app.get('/tasks/new', (req, res) => {
@@ -171,14 +256,16 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/tasks/${id}`);
   });
 
-  app.post('/tasks/example', (req, res) => {
-    const id = store.createTask(DISK_TASK);
+  app.post('/tasks/template/:key', (req, res) => {
+    const task = templateTask(req.params.key);
+    if (!task) return res.status(404).view('error', { message: 'Modèle introuvable.' });
+    const id = store.createTask(task);
     res.redirect(`/tasks/${id}`);
   });
 
   app.get('/cron-preview', (req, res) => {
     const expr = String(req.query.cron ?? '').trim();
-    const error = cronError(expr, config.timezone);
+    const error = cronError(expr, config.timezone, { allowEmpty: true });
     res.view('partials/cron-preview', { expr, error, next: error ? [] : nextRuns(expr, config.timezone, 3) });
   });
 
@@ -256,6 +343,10 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       alertEmail: store.getSetting('alert_email') ?? '',
       smtpEnabled: mailer.enabled,
       smtpFrom: config.smtp.from,
+      mcp: { ...mcp, url: mcp.url.toString() },
+      grants: oauth.listGrants(),
+      mcpTools: mcpAllowedTools(store),
+      defaultMcpTools: DEFAULT_MCP_TOOLS,
       errors: {},
       notice: null,
       ...extra,
@@ -302,6 +393,21 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       });
     }),
   );
+
+  app.post('/settings/mcp/tools', (req, res) => {
+    const rules = parseToolList(req.body.mcp_tools);
+    if (rules.some((r) => !/^[A-Za-z][A-Za-z0-9_]*(\(.{1,200}\))?$/.test(r))) {
+      res.status(400);
+      return settingsView(res, { errors: { mcp_tools: 'Règle d’outil invalide (ex : Read, Bash(df:*)).' } });
+    }
+    store.setSetting('mcp_allowed_tools', JSON.stringify(rules));
+    settingsView(res, { notice: 'Outils autorisables via MCP enregistrés.' });
+  });
+
+  app.post('/settings/mcp/grants/:id/revoke', (req, res) => {
+    oauth.revokeGrant(req.params.id);
+    settingsView(res, { notice: 'Accès MCP révoqué.' });
+  });
 
   app.post('/settings/alerts', (req, res) => {
     const parsed = emailSchema.safeParse(String(req.body.alert_email ?? '').trim());

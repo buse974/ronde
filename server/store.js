@@ -52,7 +52,8 @@ export function createStore(db) {
         .map(parseTask);
     },
     listActiveTasks() {
-      return stmt('SELECT * FROM tasks WHERE active = 1').all().map(parseTask);
+      // Les tâches sans cron sont manuelles : le scheduler les ignore.
+      return stmt("SELECT * FROM tasks WHERE active = 1 AND cron != ''").all().map(parseTask);
     },
     getTask(id) {
       return parseTask(stmt('SELECT * FROM tasks WHERE id = ?').get(id));
@@ -60,9 +61,9 @@ export function createStore(db) {
     createTask(t) {
       const now = nowIso();
       const info = stmt(
-        `INSERT INTO tasks (name, prompt, cron, allowed_tools, max_turns, timeout_sec, active, created_at, updated_at)
-         VALUES (@name, @prompt, @cron, @allowed_tools, @max_turns, @timeout_sec, @active, @now, @now)`,
-      ).run({ ...t, allowed_tools: JSON.stringify(t.allowed_tools), active: t.active ? 1 : 0, now });
+        `INSERT INTO tasks (name, prompt, cron, allowed_tools, max_turns, timeout_sec, active, created_via, created_at, updated_at)
+         VALUES (@name, @prompt, @cron, @allowed_tools, @max_turns, @timeout_sec, @active, @created_via, @now, @now)`,
+      ).run({ ...t, allowed_tools: JSON.stringify(t.allowed_tools), active: t.active ? 1 : 0, created_via: t.created_via ?? 'ui', now });
       return Number(info.lastInsertRowid);
     },
     updateTask(id, t) {

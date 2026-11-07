@@ -9,12 +9,7 @@
 <% } %>
 
 <% if (!it.tasks.length) { %>
-<article>
-  <p>Aucune tâche pour l'instant.</p>
-  <form method="post" action="/tasks/example" class="inline">
-    <button type="submit" class="secondary">Créer la tâche d'exemple : surveillance disque et Docker</button>
-  </form>
-</article>
+<p class="muted">Aucune tâche pour l'instant. Pars d'un modèle ci-dessous, crée une tâche, ou demande à Claude de la concevoir via le MCP (Réglages &gt; Accès MCP).</p>
 <% } else { %>
 <div class="overflow-auto">
 <table class="striped">
@@ -30,3 +25,17 @@
 </div>
 <p class="muted">Coût estimé en équivalent API. Avec un token d'abonnement, il n'est pas facturé : il est pris sur ton quota.</p>
 <% } %>
+
+<h3>Modèles</h3>
+<div class="grid templates">
+  <% Object.entries(it.templates).forEach(([key, t]) => { %>
+  <article>
+    <header><strong><%= t.name %></strong></header>
+    <p><%= t.summary %></p>
+    <p class="muted"><small><%= it.h.cronText(t.cron) %> · outils : <%= t.allowed_tools.join(', ') %> · données : <code><%= t.requires %></code> sur l'hôte</small></p>
+    <form method="post" action="/tasks/template/<%= key %>" class="inline">
+      <button type="submit" class="secondary outline small">Créer depuis ce modèle</button>
+    </form>
+  </article>
+  <% }) %>
+</div>

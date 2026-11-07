@@ -4,8 +4,9 @@ import { classify, runClaude } from './runner.js';
 const MINUTE = 60_000;
 
 /** Valide une expression cron à 5 champs. Retourne un message d'erreur ou null. */
-export function cronError(expr, timezone) {
+export function cronError(expr, timezone, { allowEmpty = false } = {}) {
   const value = String(expr ?? '').trim();
+  if (!value && allowEmpty) return null;
   if (value.split(/\s+/).length !== 5) return 'Expression cron à 5 champs attendue (minute heure jour mois jour-semaine).';
   try {
     new Cron(value, { timezone, paused: true });
@@ -16,6 +17,7 @@ export function cronError(expr, timezone) {
 }
 
 export function nextRuns(expr, timezone, count = 1, from = new Date()) {
+  if (!expr) return [];
   try {
     return new Cron(expr, { timezone, paused: true }).nextRuns(count, from);
   } catch {

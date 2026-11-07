@@ -21,6 +21,7 @@ export function createHelpers(timezone) {
     tokensIn: (run) =>
       run.input_tokens == null ? null : run.input_tokens + (run.cache_read_tokens ?? 0) + (run.cache_creation_tokens ?? 0),
     cronText(expr) {
+      if (!expr) return 'Manuelle';
       try {
         return cronstrue.toString(expr, { locale: 'fr', use24HourTimeFormat: true });
       } catch {
