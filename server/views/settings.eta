@@ -1,0 +1,60 @@
+<% layout('./layout', { ...it, title: 'Réglages' }) %>
+<% const t = it.token, e = it.errors; %>
+<h2>Réglages</h2>
+<% if (it.notice) { %><p class="notice ok-box"><%= it.notice %></p><% } %>
+
+<article>
+  <header><strong>Token Claude</strong></header>
+  <% if (t.configured) { %>
+    <p>Configuré : <code><%= t.masked %></code> · <%= it.h.tokenTypeLabel(t.type) %>
+      <% if (t.source === 'env') { %><br><small class="muted">Défini par une variable d'environnement : il est prioritaire et ne peut pas être modifié ici.</small><% } %></p>
+    <% if (t.type === 'api') { %><p class="notice warn">Clé API : chaque run est facturé à l'usage sur la console Anthropic.</p><% } %>
+  <% } else if (t.unreadable) { %>
+    <p class="notice warn">Le token enregistré est illisible (le secret de l'application a changé). Colle-le à nouveau.</p>
+  <% } else { %>
+    <p class="notice warn">Aucun token : les runs échoueront.</p>
+  <% } %>
+
+  <% if (t.source !== 'env') { %>
+  <form method="post" action="/settings/token">
+    <label><%= t.configured ? 'Remplacer le token' : 'Coller le token' %>
+      <input type="password" name="claude_token" autocomplete="off" placeholder="sk-ant-oat…" required <%~ e.claude_token ? 'aria-invalid="true"' : '' %>>
+      <small class="<%= e.claude_token ? 'error' : '' %>"><%= e.claude_token ?? 'Recommandé : « claude setup-token » sur ta machine (abonnement Pro/Max, pas de facturation à part). Le token est chiffré en base.' %></small>
+    </label>
+    <button type="submit">Enregistrer</button>
+  </form>
+  <% } %>
+
+  <% if (t.configured) { %>
+  <footer class="actions">
+    <form method="post" action="/settings/token/test" hx-post="/settings/token/test" hx-target="#token-test" hx-indicator="#token-test-btn" class="inline">
+      <button type="submit" id="token-test-btn" class="secondary">Tester</button>
+    </form>
+    <% if (t.source === 'db') { %>
+    <form method="post" action="/settings/token/delete" class="inline">
+      <button type="submit" class="secondary outline">Supprimer</button>
+    </form>
+    <% } %>
+    <div id="token-test"></div>
+  </footer>
+  <% } %>
+</article>
+
+<article>
+  <header><strong>Alertes</strong></header>
+  <% if (!it.smtpEnabled) { %>
+  <p class="notice warn">SMTP non configuré (variable <code>SMTP_HOST</code>) : aucun mail ne sera envoyé.</p>
+  <% } %>
+  <form method="post" action="/settings/alerts">
+    <label>Email destinataire
+      <input type="email" name="alert_email" value="<%= it.alertEmail %>" placeholder="toi@exemple.fr" <%~ e.alert_email ? 'aria-invalid="true"' : '' %>>
+      <small class="<%= e.alert_email ? 'error' : '' %>"><%= e.alert_email ?? 'Un mail part quand Claude ne répond pas « RAS » ou quand un run échoue. Expéditeur : ' + it.smtpFrom %></small>
+    </label>
+    <button type="submit">Enregistrer</button>
+  </form>
+  <% if (it.alertEmail && it.smtpEnabled) { %>
+  <form method="post" action="/settings/alerts/test" class="inline">
+    <button type="submit" class="secondary outline">Envoyer un mail de test</button>
+  </form>
+  <% } %>
+</article>

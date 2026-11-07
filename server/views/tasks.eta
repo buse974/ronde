@@ -1,0 +1,32 @@
+<% layout('./layout', { ...it, title: 'Tâches' }) %>
+<div class="page-head">
+  <h2>Tâches</h2>
+  <a href="/tasks/new" role="button">Nouvelle tâche</a>
+</div>
+
+<% if (!it.tokenStatus.configured) { %>
+<p class="notice warn">Aucun token Claude configuré : les runs échoueront. <a href="/settings">Ajouter un token</a>.</p>
+<% } %>
+
+<% if (!it.tasks.length) { %>
+<article>
+  <p>Aucune tâche pour l'instant.</p>
+  <form method="post" action="/tasks/example" class="inline">
+    <button type="submit" class="secondary">Créer la tâche d'exemple : surveillance disque et Docker</button>
+  </form>
+</article>
+<% } else { %>
+<div class="overflow-auto">
+<table class="striped">
+  <thead>
+    <tr><th>Tâche</th><th>Planification</th><th>Prochain run</th><th>Dernier run</th><th>Coût 30 j</th><th>Active</th><th></th></tr>
+  </thead>
+  <tbody>
+    <% it.tasks.forEach((t) => { %>
+      <%~ include('./partials/task-row', { ...it, t }) %>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<p class="muted">Coût estimé en équivalent API. Avec un token d'abonnement, il n'est pas facturé : il est pris sur ton quota.</p>
+<% } %>

@@ -1,0 +1,6 @@
+<% if (it.ok) { %>
+<p class="notice ok-box"><%= it.message %><% if (it.cost != null) { %> <small>(<%= it.h.cost(it.cost) %> estimé)</small><% } %></p>
+<% } else { %>
+<p class="notice error-box"><%= it.message %></p>
+<% if (it.detail) { %><pre><%= it.detail %></pre><% } %>
+<% } %>
