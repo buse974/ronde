@@ -1,0 +1,31 @@
+<% layout('./layout', { ...it, title: 'Autoriser un accès MCP' }) %>
+<% const p = it.p; %>
+<article class="narrow">
+  <header>
+    <h2>Autoriser « <%= p.clientName %> »</h2>
+    <p>Ce client demande à piloter ronde via MCP : lister, <strong>essayer</strong>, créer, modifier et lancer des rondes.
+      Il ne pourra pas supprimer de ronde ni changer les réglages.</p>
+    <p>Le code d'accès sera envoyé à <strong><code><%= p.redirectHost %></code></strong>
+      <% if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(p.redirectHost)) { %>(un programme sur ta machine, comme Claude Code).<% } else { %>(service en ligne).<% } %>
+      N'autorise que si tu viens de lancer cette connexion toi-même.</p>
+  </header>
+  <% if (it.error) { %><p class="error"><%= it.error %></p><% } %>
+  <form method="post" action="/oauth/consent">
+    <input type="hidden" name="req" value="<%= it.reqId %>">
+    <% if (it.user) { %>
+      <p>Connecté en tant que <strong><%= it.user %></strong>.</p>
+    <% } else { %>
+      <label>Identifiant
+        <input name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Mot de passe
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+    <% } %>
+    <div class="actions">
+      <button type="submit" name="action" value="allow">Autoriser</button>
+      <button type="submit" name="action" value="deny" class="secondary outline" formnovalidate>Refuser</button>
+    </div>
+  </form>
+  <footer><small class="muted">L'accès se révoque à tout moment dans Réglages &gt; Accès MCP.</small></footer>
+</article>

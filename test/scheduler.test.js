@@ -56,3 +56,19 @@ describe('scheduler', () => {
     expect(ctx.store.getRun(runId)).toMatchObject({ status: 'failed' });
   });
 });
+
+describe('tâches manuelles', () => {
+  it('cron vide accepté, ignoré par le scheduler, lançable à la main', async () => {
+    const ctx = setup();
+    expect(cronError('', 'UTC', { allowEmpty: true })).toBeNull();
+    expect(cronError('', 'UTC')).not.toBeNull();
+    const id = ctx.store.createTask(task({ name: 'manuelle', cron: '' }));
+    expect(ctx.store.listActiveTasks().map((t) => t.id)).not.toContain(id);
+    const sched = startScheduler({ store: ctx.store, executor: ctx.executor, timezone: 'UTC', log: silentLog, now: () => 0 });
+    sched.stop();
+    expect(sched.runDue(at('2026-11-09T10:00:00Z').getTime())).toHaveLength(0);
+    const started = ctx.executor.start(ctx.store.getTask(id), 'manual');
+    await started.done;
+    expect(ctx.store.getRun(started.runId).status).toBe('ok');
+  });
+});

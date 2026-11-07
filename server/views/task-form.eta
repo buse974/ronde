@@ -15,7 +15,7 @@
 
   <div class="grid">
     <label>Planification (cron, fuseau <%= it.timezone %>)
-      <input name="cron" value="<%= v.cron %>" required <%~ field('cron') %>
+      <input name="cron" value="<%= v.cron %>" placeholder="vide = manuelle" <%~ field('cron') %>
         hx-get="/cron-preview" hx-trigger="load, input changed delay:300ms" hx-target="#cron-preview" hx-sync="this:replace">
       <small id="cron-preview" class="<%= e.cron ? 'error' : '' %>"><%= e.cron ?? '' %></small>
     </label>
@@ -37,7 +37,7 @@
   </div>
 
   <label>
-    <input type="checkbox" role="switch" name="active" <%= v.active ? 'checked' : '' %>> Active
+    <input type="checkbox" role="switch" name="active" <%= v.active ? 'checked' : '' %>> Active <small class="muted">(sans effet pour une tâche manuelle)</small>
   </label>
 
   <div class="actions">

@@ -29,7 +29,7 @@ export function fakeMailer() {
 }
 
 export function setup({ envToken = null, token = OAUTH, env = {} } = {}) {
-  const config = loadConfig({ DATA_DIR: '/nonexistent', CLAUDE_BIN: FAKE_CLAUDE, TZ: 'Europe/Paris', RUNNER_KILL_GRACE_MS: '200', RUNNER_PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, ...env });
+  const config = loadConfig({ DATA_DIR: '/nonexistent', CLAUDE_BIN: FAKE_CLAUDE, TZ: 'Europe/Paris', RUNNER_KILL_GRACE_MS: '200', PUBLIC_URL: 'http://127.0.0.1', RUNNER_PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, ...env });
   const store = createStore(openDb(':memory:'));
   const claudeAuth = createClaudeAuth({ store, appSecret: 'test-secret', envToken });
   if (token) claudeAuth.save(token);

@@ -15,6 +15,7 @@
     "seed:example": "node scripts/seed-example.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "argon2": "^0.45.2",
     "better-sqlite3": "^13.0.3",
     "cookie-parser": "^1.4.7",

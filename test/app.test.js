@@ -52,7 +52,7 @@ describe('installation et auth', () => {
 
   it('refuse un POST d’une autre origine', async () => {
     const { agent } = await installed();
-    const res = await agent.post('/tasks/example').set('Host', HOST).set('Origin', 'http://evil.com');
+    const res = await agent.post('/tasks/template/disk').set('Host', HOST).set('Origin', 'http://evil.com');
     expect(res.status).toBe(403);
   });
 });
@@ -93,7 +93,7 @@ describe('tâches', () => {
   it('lancement manuel puis détail du run', async () => {
     const { agent, store, executor, claudeAuth } = await installed();
     claudeAuth.save('sk-ant-oat01-' + 'y'.repeat(30));
-    const ex = await post(agent, '/tasks/example');
+    const ex = await post(agent, '/tasks/template/disk');
     const id = Number(ex.headers.location.split('/').pop());
     store.updateTask(id, { ...store.getTask(id), prompt: 'MODE:alert' });
     const res = await post(agent, `/tasks/${id}/run`);

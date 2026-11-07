@@ -41,6 +41,45 @@
 </article>
 
 <article>
+  <header><strong>Accès MCP</strong></header>
+  <% if (!it.mcp.enabled) { %>
+    <p class="notice warn">MCP désactivé : l'authentification OAuth exige une URL publique en HTTPS (variable <code>PUBLIC_URL</code>).</p>
+  <% } else { %>
+    <p>Permet à Claude (Claude Code, claude.ai) de concevoir, essayer et créer des rondes avec toi. Connexion avec ton identifiant et ton mot de passe ronde : aucun token à copier.</p>
+    <p>Dans ton terminal :</p>
+    <pre>claude mcp add --scope user --transport http ronde <%= it.mcp.url %></pre>
+    <p class="muted">Puis, dans Claude Code : <code>/mcp</code> → ronde → s'authentifier. Le navigateur s'ouvre sur ronde pour autoriser l'accès.</p>
+
+    <h4>Accès autorisés</h4>
+    <% if (!it.grants.length) { %>
+      <p class="muted">Aucun pour l'instant.</p>
+    <% } else { %>
+    <table>
+      <thead><tr><th>Client</th><th>Autorisé le</th><th>Dernière utilisation</th><th></th></tr></thead>
+      <tbody>
+      <% it.grants.forEach((g) => { %>
+        <tr>
+          <td><%= g.client_name || 'Client MCP' %> <small class="muted">(<%= g.username %>)</small></td>
+          <td><%= it.h.short(g.created_at) %></td>
+          <td><%= it.h.short(g.last_used_at) %></td>
+          <td><form method="post" action="/settings/mcp/grants/<%= g.id %>/revoke" class="inline"><button type="submit" class="secondary outline small">Révoquer</button></form></td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+    <% } %>
+
+    <form method="post" action="/settings/mcp/tools">
+      <label>Outils autorisables via MCP (un par ligne)
+        <textarea name="mcp_tools" rows="3" <%~ e.mcp_tools ? 'aria-invalid="true"' : '' %>><%= it.mcpTools.join('\n') %></textarea>
+        <small class="<%= e.mcp_tools ? 'error' : '' %>"><%= e.mcp_tools ?? 'Une ronde créée ou essayée via MCP ne peut utiliser que ces outils. Par défaut : ' + it.defaultMcpTools.join(', ') + '. Éviter Bash, Write ou Edit : ils donnent un shell ou l’écriture dans le conteneur.' %></small>
+      </label>
+      <button type="submit">Enregistrer</button>
+    </form>
+  <% } %>
+</article>
+
+<article>
   <header><strong>Alertes</strong></header>
   <% if (!it.smtpEnabled) { %>
   <p class="notice warn">SMTP non configuré (variable <code>SMTP_HOST</code>) : aucun mail ne sera envoyé.</p>
