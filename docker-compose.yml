@@ -1,0 +1,13 @@
+# Lancement auto-hébergé : docker compose up -d
+services:
+  ronde:
+    build: .
+    container_name: ronde
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ronde-data:/data
+volumes:
+  ronde-data:

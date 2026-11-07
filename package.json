@@ -1,0 +1,20 @@
+{
+  "name": "ronde",
+  "version": "0.1.0",
+  "description": "Planificateur de tâches Claude auto-hébergé : tâches récurrentes claude -p, historique, alertes.",
+  "type": "module",
+  "main": "server/index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch --env-file-if-exists=.env server/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "eta": "^4.6.0",
+    "express": "^5.3.0"
+  }
+}

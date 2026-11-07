@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= it.title %></title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
+</head>
+<body>
+  <main class="container">
+    <h1>ronde</h1>
+    <p>Planificateur de tâches Claude. Squelette prêt.</p>
+  </main>
+</body>
+</html>
