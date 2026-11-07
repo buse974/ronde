@@ -1,0 +1,15 @@
+<% layout('./layout', { ...it, title: 'Connexion' }) %>
+<article class="narrow">
+  <h2>Connexion</h2>
+  <% if (it.error) { %><p class="error"><%= it.error %></p><% } %>
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="<%= it.next %>">
+    <label>Identifiant
+      <input name="username" value="<%= it.username %>" autocomplete="username" required autofocus>
+    </label>
+    <label>Mot de passe
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Se connecter</button>
+  </form>
+</article>

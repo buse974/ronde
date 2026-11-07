@@ -1,13 +1,26 @@
-# Lancement auto-hébergé : docker compose up -d
+# Installation auto-hébergée :
+#   docker compose up -d
+#   docker compose logs ronde   # code d'installation, à saisir sur http://<serveur>:3000/setup
 services:
   ronde:
     build: .
+    image: ghcr.io/buse974/ronde:latest
     container_name: ronde
     restart: unless-stopped
-    env_file: .env
     ports:
       - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
     volumes:
       - ronde-data:/data
+      # Mesures produites sur l'hôte par host/ronde-metrics.sh (tâche d'exemple).
+      - ./host-metrics:/host-metrics:ro
+    # Seules capacités nécessaires : changer d'uid pour lancer claude, et pouvoir l'arrêter.
+    cap_drop: [ALL]
+    cap_add: [SETUID, SETGID, KILL]
+    security_opt:
+      - no-new-privileges:true
+
 volumes:
   ronde-data:

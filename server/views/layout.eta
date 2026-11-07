@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= it.title ? it.title + ' · ronde' : 'ronde' %></title>
+  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/vendor/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul><li><a href="/" class="brand">ronde</a></li></ul>
+      <% if (it.user) { %>
+      <ul>
+        <li><a href="/tasks" <%~ it.path.startsWith('/tasks') || it.path.startsWith('/runs') ? 'aria-current="page"' : '' %>>Tâches</a></li>
+        <li><a href="/settings" <%~ it.path.startsWith('/settings') ? 'aria-current="page"' : '' %>>Réglages</a></li>
+        <li>
+          <form method="post" action="/logout" class="inline">
+            <button type="submit" class="secondary outline small">Déconnexion</button>
+          </form>
+        </li>
+      </ul>
+      <% } %>
+    </nav>
+  </header>
+  <main class="container">
+    <%~ it.body %>
+  </main>
+</body>
+</html>

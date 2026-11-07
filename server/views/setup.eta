@@ -1,0 +1,49 @@
+<% layout('./layout', { ...it, title: 'Installation' }) %>
+<% const v = it.values, e = it.errors; %>
+<% const field = (k) => e[k] ? 'aria-invalid="true"' : '' %>
+<article class="narrow">
+  <header>
+    <h2>Installation de ronde</h2>
+    <p>Crée le compte administrateur. Le code d'installation est affiché dans les logs du conteneur :
+      <code>docker compose logs ronde</code>.</p>
+  </header>
+  <% if (e._) { %><p class="error"><%= e._ %></p><% } %>
+  <form method="post" action="/setup">
+    <label>Code d'installation
+      <input name="setup_code" value="<%= v.setup_code ?? '' %>" autocomplete="off" required <%~ field('setup_code') %>>
+      <% if (e.setup_code) { %><small class="error"><%= e.setup_code %></small><% } %>
+    </label>
+
+    <fieldset>
+      <legend>Compte administrateur</legend>
+      <label>Identifiant
+        <input name="username" value="<%= v.username ?? 'admin' %>" autocomplete="username" required <%~ field('username') %>>
+        <% if (e.username) { %><small class="error"><%= e.username %></small><% } %>
+      </label>
+      <div class="grid">
+        <label>Mot de passe
+          <input type="password" name="password" autocomplete="new-password" minlength="10" required <%~ field('password') %>>
+          <small class="<%= e.password ? 'error' : '' %>"><%= e.password ?? '10 caractères minimum.' %></small>
+        </label>
+        <label>Confirmation
+          <input type="password" name="password_confirm" autocomplete="new-password" required <%~ field('password_confirm') %>>
+          <% if (e.password_confirm) { %><small class="error"><%= e.password_confirm %></small><% } %>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Facultatif (modifiable ensuite dans les Réglages)</legend>
+      <label>Token Claude
+        <input type="password" name="claude_token" value="" autocomplete="off" placeholder="sk-ant-oat…" <%~ field('claude_token') %>>
+        <small class="<%= e.claude_token ? 'error' : '' %>"><%= e.claude_token ?? 'Généré avec « claude setup-token » : utilise ton abonnement, sans facturation à part.' %></small>
+      </label>
+      <label>Email d'alerte
+        <input type="email" name="alert_email" value="<%= v.alert_email ?? '' %>" placeholder="toi@exemple.fr" <%~ field('alert_email') %>>
+        <small class="<%= e.alert_email ? 'error' : '' %>"><%= e.alert_email ?? 'Reçoit un mail quand une tâche signale un problème ou échoue.' %></small>
+      </label>
+    </fieldset>
+
+    <button type="submit">Créer le compte</button>
+  </form>
+</article>

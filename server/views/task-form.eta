@@ -1,0 +1,47 @@
+<% const v = it.values, e = it.errors, editing = !!it.task; %>
+<% layout('./layout', { ...it, title: editing ? 'Modifier' : 'Nouvelle tâche' }) %>
+<% const field = (k) => e[k] ? 'aria-invalid="true"' : '' %>
+<h2><%= editing ? 'Modifier « ' + it.task.name + ' »' : 'Nouvelle tâche' %></h2>
+<form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>">
+  <label>Nom
+    <input name="name" value="<%= v.name %>" required maxlength="100" <%~ field('name') %>>
+    <% if (e.name) { %><small class="error"><%= e.name %></small><% } %>
+  </label>
+
+  <label>Prompt
+    <textarea name="prompt" rows="10" required <%~ field('prompt') %>><%= v.prompt %></textarea>
+    <small class="<%= e.prompt ? 'error' : '' %>"><%= e.prompt ?? 'Convention : demande à Claude de répondre exactement « RAS » s’il n’y a rien à signaler. Toute autre réponse déclenche une alerte.' %></small>
+  </label>
+
+  <div class="grid">
+    <label>Planification (cron, fuseau <%= it.timezone %>)
+      <input name="cron" value="<%= v.cron %>" required <%~ field('cron') %>
+        hx-get="/cron-preview" hx-trigger="load, input changed delay:300ms" hx-target="#cron-preview" hx-sync="this:replace">
+      <small id="cron-preview" class="<%= e.cron ? 'error' : '' %>"><%= e.cron ?? '' %></small>
+    </label>
+    <label>Outils autorisés (un par ligne)
+      <textarea name="allowed_tools" rows="3" placeholder="Read&#10;Bash(df:*)" <%~ field('allowed_tools') %>><%= (v.allowed_tools || []).join('\n') %></textarea>
+      <small class="<%= e.allowed_tools ? 'error' : '' %>"><%= e.allowed_tools ?? 'Vide = aucun outil. Seuls ces outils sont disponibles pour Claude.' %></small>
+    </label>
+  </div>
+
+  <div class="grid">
+    <label>Tours max
+      <input type="number" name="max_turns" min="1" max="50" value="<%= v.max_turns %>" required <%~ field('max_turns') %>>
+      <% if (e.max_turns) { %><small class="error"><%= e.max_turns %></small><% } %>
+    </label>
+    <label>Timeout (secondes)
+      <input type="number" name="timeout_sec" min="30" max="3600" value="<%= v.timeout_sec %>" required <%~ field('timeout_sec') %>>
+      <% if (e.timeout_sec) { %><small class="error"><%= e.timeout_sec %></small><% } %>
+    </label>
+  </div>
+
+  <label>
+    <input type="checkbox" role="switch" name="active" <%= v.active ? 'checked' : '' %>> Active
+  </label>
+
+  <div class="actions">
+    <button type="submit"><%= editing ? 'Enregistrer' : 'Créer' %></button>
+    <a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" role="button" class="secondary outline">Annuler</a>
+  </div>
+</form>

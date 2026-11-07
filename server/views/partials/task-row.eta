@@ -1,0 +1,23 @@
+<% const t = it.t, h = it.h; %>
+<tr id="task-<%= t.id %>" class="<%= t.active ? '' : 'inactive' %>">
+  <td><a href="/tasks/<%= t.id %>"><strong><%= t.name %></strong></a></td>
+  <td><span title="<%= t.cron %>"><%= h.cronText(t.cron) %></span></td>
+  <td><%= t.active ? h.nextRun(t.cron) : '—' %></td>
+  <td>
+    <% if (t.last_run_id) { %>
+      <a href="/runs/<%= t.last_run_id %>"><span class="badge <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></span></a>
+      <small class="muted"><%= h.short(t.last_started_at) %></small>
+    <% } else { %>—<% } %>
+  </td>
+  <td><%= h.cost(t.cost_30d) %></td>
+  <td>
+    <form method="post" action="/tasks/<%= t.id %>/toggle" hx-post="/tasks/<%= t.id %>/toggle" hx-trigger="change" hx-target="#task-<%= t.id %>" hx-swap="outerHTML" class="inline">
+      <input type="checkbox" role="switch" <%= t.active ? 'checked' : '' %> aria-label="Active">
+    </form>
+  </td>
+  <td>
+    <form method="post" action="/tasks/<%= t.id %>/run" class="inline">
+      <button type="submit" class="outline small">Lancer</button>
+    </form>
+  </td>
+</tr>

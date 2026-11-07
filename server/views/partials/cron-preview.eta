@@ -1,0 +1,1 @@
+<% if (it.error) { %><span class="error"><%= it.error %></span><% } else { %><%= it.h.cronText(it.expr) %> · prochains : <%= it.next.map((d) => it.h.short(d.toISOString())).join(', ') %><% } %>

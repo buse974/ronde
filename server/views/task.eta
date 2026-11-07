@@ -1,0 +1,71 @@
+<% layout('./layout', { ...it, title: it.task.name }) %>
+<% const t = it.task, h = it.h; %>
+<div class="page-head">
+  <div>
+    <h2><%= t.name %> <% if (!t.active) { %><span class="badge inactive">Inactive</span><% } %></h2>
+    <p class="muted"><%= h.cronText(t.cron) %> (<code><%= t.cron %></code>)<% if (t.active) { %> · prochain run : <%= h.nextRun(t.cron) %><% } %></p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/tasks/<%= t.id %>/run" class="inline"><button type="submit">Lancer maintenant</button></form>
+    <a href="/tasks/<%= t.id %>/edit" role="button" class="secondary outline">Modifier</a>
+  </div>
+</div>
+
+<% if (it.started === 'busy') { %><p class="notice warn">Un run de cette tâche est déjà en cours.</p><% } %>
+
+<div class="grid stats">
+  <% [['7 derniers jours', it.stats.d7], ['30 derniers jours', it.stats.d30]].forEach(([label, s]) => { %>
+  <article>
+    <header><%= label %></header>
+    <p><strong><%= s.runs %></strong> runs · <span class="badge ok"><%= s.ok ?? 0 %> RAS</span> <span class="badge alert"><%= s.alert ?? 0 %> alertes</span> <span class="badge failed"><%= s.failed ?? 0 %> échecs</span></p>
+    <p>Tokens : <%= h.tokens(s.tokens_in) %> entrée · <%= h.tokens(s.tokens_out) %> sortie</p>
+    <p>Coût estimé : <strong><%= h.cost(s.cost) %></strong> <small class="muted">(équivalent API)</small></p>
+  </article>
+  <% }) %>
+</div>
+
+<details>
+  <summary>Configuration</summary>
+  <p><strong>Outils :</strong> <%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %> · <strong>Tours max :</strong> <%= t.max_turns %> · <strong>Timeout :</strong> <%= t.timeout_sec %> s</p>
+  <pre><%= t.prompt %></pre>
+</details>
+
+<h3>Historique</h3>
+<% if (!it.runs.length) { %>
+<p class="muted">Aucun run pour l'instant.</p>
+<% } else { %>
+<div class="overflow-auto">
+<table class="striped">
+  <thead><tr><th>#</th><th>Début</th><th>Déclencheur</th><th>Statut</th><th>Durée</th><th>Tokens entrée / sortie</th><th>Coût estimé</th><th>Réponse</th></tr></thead>
+  <tbody>
+  <% it.runs.forEach((r) => { %>
+    <tr>
+      <td><a href="/runs/<%= r.id %>"><%= r.id %></a></td>
+      <td><%= h.short(r.started_at) %></td>
+      <td><%= r.trigger === 'manual' ? 'Manuel' : 'Planifié' %></td>
+      <td><span class="badge <%= r.status %>"><%= h.statusLabel(r.status) %></span><% if (r.alert_sent) { %> <span title="Mail envoyé">✉</span><% } %></td>
+      <td><%= h.duration(r.duration_ms) %></td>
+      <td><%= h.tokens(h.tokensIn(r)) %> / <%= h.tokens(r.output_tokens) %></td>
+      <td><%= h.cost(r.cost_usd) %></td>
+      <td class="truncate"><%= r.error || r.result || '' %></td>
+    </tr>
+  <% }) %>
+  </tbody>
+</table>
+</div>
+<% if (it.pages > 1) { %>
+<nav class="pager">
+  <% if (it.page > 1) { %><a href="?page=<%= it.page - 1 %>">← Plus récents</a><% } %>
+  <span>Page <%= it.page %> / <%= it.pages %></span>
+  <% if (it.page < it.pages) { %><a href="?page=<%= it.page + 1 %>">Plus anciens →</a><% } %>
+</nav>
+<% } %>
+<% } %>
+
+<details class="danger-zone">
+  <summary>Supprimer la tâche</summary>
+  <form method="post" action="/tasks/<%= t.id %>/delete">
+    <p>La tâche et tout son historique seront supprimés.</p>
+    <button type="submit" class="secondary">Supprimer définitivement</button>
+  </form>
+</details>
