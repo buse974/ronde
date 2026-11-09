@@ -20,6 +20,7 @@ import {
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { TEMPLATES, templateTask } from './examples.js';
+import { ASK_TOOLS, createAsks } from './asks.js';
 import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
@@ -64,6 +65,11 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   const h = createHelpers(config.timezone);
   const limiter = createRateLimiter();
   const oauth = createOAuthProvider({ db: store.db });
+  const asks = createAsks({ db: store.db, config, claudeAuth });
+  asks.recoverOrphans();
+  app.locals.asks = asks;
+  /** Outils proposés dans « Demander à Claude » : Read, Grep, Glob + ceux autorisés via MCP. */
+  const askTools = () => [...new Set([...ASK_TOOLS, ...mcpAllowedTools(store)])];
   const mcp = mcpEndpoint(config);
 
   app.disable('x-powered-by');
@@ -245,16 +251,67 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       tokenStatus: claudeAuth.status(),
       templates: TEMPLATES,
       dial: buildDial({ tasks, recentRuns, timezone: config.timezone }),
+      asks: asks.recent(),
+      askTools: askTools(),
+      askBusy: asks.busy || req.query.busy === '1',
       summary: summarize({ tasks, recentRuns, timezone: config.timezone }),
     });
   });
 
   app.get('/tasks/new', (req, res) => {
+    const proposal = req.query.from_ask ? asks.get(Number(req.query.from_ask))?.proposal : null;
     res.view('task-form', {
       task: null,
-      values: { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 600, active: true },
+      values: proposal
+        ? { ...proposal, active: true }
+        : { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 600, active: true },
       errors: {},
+      fromAsk: proposal ? Number(req.query.from_ask) : null,
     });
+  });
+
+  // --- Demander à Claude --------------------------------------------------
+  app.post('/asks', (req, res) => {
+    const text = String(req.body.prompt ?? '').trim();
+    if (!text) return res.redirect('/tasks');
+    if (text.length > 20_000) return res.status(400).view('error', { message: 'Demande trop longue (20 000 caractères maximum).' });
+    const allowed = askTools();
+    const picked = [].concat(req.body.tools ?? []).filter((t) => allowed.includes(t));
+    const kind = req.body.action === 'design' ? 'design' : 'exec';
+    const started = asks.start(kind, text, kind === 'design' ? mcpAllowedTools(store) : picked);
+    if (!started) return res.redirect('/tasks?busy=1#demander');
+    res.redirect(`/asks/${started.id}`);
+  });
+
+  const loadAsk = (req, res, next) => {
+    const ask = asks.get(Number(req.params.id));
+    if (!ask) return res.status(404).view('error', { message: 'Demande introuvable (seules les 20 dernières sont gardées).' });
+    req.ask = ask;
+    next();
+  };
+
+  app.get('/asks/:id', loadAsk, (req, res) => res.view('ask', { ask: req.ask, busy: asks.busy }));
+
+  app.get('/asks/:id/status', loadAsk, (req, res) => {
+    if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
+    res.view('partials/ask-running', { ask: req.ask });
+  });
+
+  app.post('/asks/:id/reply', loadAsk, (req, res) => {
+    const text = String(req.body.text ?? '').trim();
+    if (text) {
+      const r = asks.reply(req.ask.id, text.slice(0, 20_000));
+      if (r.error) return res.status(409).view('ask', { ask: req.ask, busy: asks.busy, error: r.error });
+    }
+    res.redirect(`/asks/${req.ask.id}`);
+  });
+
+  app.post('/asks/:id/try', loadAsk, (req, res) => {
+    const p = req.ask.proposal;
+    if (!p) return res.redirect(`/asks/${req.ask.id}`);
+    const started = asks.start('exec', p.prompt, p.allowed_tools ?? ['Read']);
+    if (!started) return res.status(409).view('ask', { ask: req.ask, busy: true, error: 'Une demande est déjà en cours.' });
+    res.redirect(`/asks/${started.id}`);
   });
 
   app.post('/tasks', (req, res) => {

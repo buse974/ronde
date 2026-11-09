@@ -286,7 +286,24 @@ input[type='checkbox'].interrupteur:checked::after { transform: translateX(1.05r
   border-bottom: 1px solid var(--trait);
   white-space: nowrap;
 }
-.registre tr.regroupe td { color: var(--brume); padding-top: 0.6rem; padding-bottom: 0.6rem; }
+.registre tr.regroupe td { color: var(--brume); padding-top: 0.15rem; padding-bottom: 0.15rem; }
+.passages, .passages:last-of-type { border: 0; padding: 0; }
+.passages summary { display: grid; grid-template-columns: minmax(9rem, 14rem) 6rem 1fr auto; gap: 1rem; align-items: center; padding: 0.55rem 0; font-weight: 400; cursor: pointer; list-style: none; }
+.passages summary::-webkit-details-marker { display: none; }
+.passages summary::after { content: '▸'; color: var(--brume-2); grid-column: 5; transition: transform .15s; }
+.passages[open] summary::after { transform: rotate(90deg); }
+.passages summary:hover span:nth-child(3) { color: var(--craie); text-decoration: underline; text-underline-offset: 3px; }
+.passages .cout { text-align: right; }
+.passages ul { list-style: none; margin: 0 0 0.6rem; padding: 0 0 0 1rem; border-left: 1px solid var(--trait); columns: 2 18rem; column-gap: 2rem; }
+.passages li { display: grid; grid-template-columns: 7.5rem 6.5rem 3.5rem 5rem; justify-content: start; gap: 0.75rem; padding: 0.2rem 0; break-inside: avoid; font-size: var(--step--1); }
+.passages li .cout { min-width: 4.5rem; }
+@media (max-width: 760px) {
+  .passages summary { grid-template-columns: 1fr auto; gap: 0.2rem 0.75rem; }
+  .passages summary .cout { display: none; }
+  .passages summary::after { grid-column: 2; grid-row: 1; }
+  .passages li { grid-template-columns: 7rem 1fr auto; }
+  .passages li span:nth-child(3) { display: none; }
+}
 .registre tr.regroupe .etat { font-weight: 600; }
 .registre td { padding: 0.85rem 0.75rem; border-bottom: 1px solid var(--trait); vertical-align: middle; }
 .registre tr:hover td { background: color-mix(in srgb, var(--nuit-2) 70%, transparent); }
@@ -374,4 +391,38 @@ details[open] summary { margin-bottom: 0.8rem; }
   .registre .extrait { max-width: none; white-space: normal; overflow-wrap: anywhere; }
   .registre .quand { white-space: normal; min-width: 5.5rem; }
   .registre .fin form + form { margin-left: 0.3rem; }
+}
+
+/* --- Demander à Claude -------------------------------------------------- */
+.masque { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.demander { margin: 0 0 3rem; padding: 1.5rem; background: var(--nuit-2); border: 1px solid var(--trait); border-radius: 10px; }
+.demander h2 { margin-bottom: 0.9rem; }
+.demander textarea { margin-top: 0; background: var(--nuit); font-size: 1.05rem; }
+.demander-bas { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 0.9rem; }
+.outils { display: flex; gap: 0.4rem 1.1rem; flex-wrap: wrap; align-items: center; margin: 0; }
+.outils legend { float: left; font-size: var(--step--1); font-weight: 600; color: var(--brume); margin: 0 0.4rem 0 0; padding: 0; }
+.outils .case { margin: 0; font-weight: 500; font-size: var(--step--1); }
+.outils .case input { accent-color: var(--ras); }
+.demander .aide { margin-top: 0.8rem; }
+.demander h3 { margin: 1.5rem 0 0.5rem; }
+.demandes { list-style: none; margin: 0; padding: 0; }
+.demandes li { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr) auto; gap: 1rem; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--trait); }
+.titre-demande { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.etat.fait { color: var(--craie); }
+.conversation { display: grid; gap: 0.9rem; margin: 1.5rem 0; max-width: 52rem; }
+.bulle { padding: 0.8rem 1.1rem; border-radius: 10px; background: var(--nuit-2); border: 1px solid var(--trait); max-width: var(--measure); }
+.bulle > div { white-space: pre-wrap; }
+.bulle.moi { justify-self: end; background: var(--nuit-3); }
+.bulle.claude { justify-self: start; }
+.bulle .qui { display: block; font-size: var(--step--1); font-weight: 600; color: var(--brume); margin-bottom: 0.25rem; white-space: normal; }
+h1 + .bulle.moi { justify-self: start; margin: 1rem 0 1.5rem; }
+.petit-verdict .etat { font-size: var(--step-2); font-stretch: 70%; }
+.proposition { border: 1px solid var(--ras); border-radius: 10px; padding: 1.3rem 1.4rem; margin: 0 0 2rem; max-width: 52rem; background: color-mix(in srgb, var(--ras) 6%, var(--nuit)); }
+.proposition details { border: 0; padding: 0.4rem 0 0; }
+.repondre { max-width: 52rem; margin-bottom: 1rem; }
+button[disabled] { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .demander { padding: 1rem; }
+  .demandes li { grid-template-columns: 1fr auto; }
+  .demandes li .quand { display: none; }
 }
