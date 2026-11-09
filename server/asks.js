@@ -43,6 +43,23 @@ function hostDataListing(dir) {
   }
 }
 
+/**
+ * Prompt d'une exécution ponctuelle : un court contexte (où Claude tourne,
+ * quelles données du serveur il peut lire), puis la demande telle quelle.
+ */
+export function execPrompt({ text, hostDataDir, tools }) {
+  return `Contexte : tu tournes dans le conteneur de « ronde », sur un serveur Linux, sans personne pour te répondre. Tu ne vois pas directement le système de l'hôte : un df ou un ps ici ne décriraient que le conteneur. Les données de l'hôte sont relevées toutes les 15 minutes dans /host-metrics, lisibles avec l'outil Read :
+${hostDataListing(hostDataDir)}
+Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
+Réponds en français, de façon concise, en citant les chiffres et l'heure de la mesure. Si l'information demandée n'est pas dans ces données, dis-le simplement et indique quelle donnée il faudrait relever.
+
+Ensuite, évalue si cette demande gagnerait à devenir une « ronde » : une vérification que Claude referait régulièrement et qui n'alerterait qu'en cas de problème (espace disque, sécurité, sauvegardes, certificats, dérive d'une valeur…). Une question ponctuelle, une explication ou une demande d'information générale n'est pas une ronde.
+Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant {"ronde": true} ou {"ronde": false}. N'en parle pas dans ta réponse : l'interface pose elle-même la question.
+
+Demande :
+${text}`;
+}
+
 /** Prompt d'un tour de conception : consignes, données disponibles, conversation. */
 export function designPrompt({ messages, timezone, hostDataDir, allowedTools }) {
   const transcript = messages
@@ -80,6 +97,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
   const parse = (row) =>
     row && {
       ...row,
+      suggest_ronde: !!row.suggest_ronde,
       allowed_tools: JSON.parse(row.allowed_tools),
       messages: JSON.parse(row.messages),
       proposal: row.proposal ? JSON.parse(row.proposal) : null,
@@ -113,13 +131,17 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     return { r: classify(out), out };
   }
 
-  async function runExec(id, prompt, tools) {
-    const { r, out } = await call(prompt, tools, 10, EXEC_TIMEOUT_SEC);
+  /** raw = prompt envoyé tel quel (essai d'une ronde proposée, comme un vrai passage). */
+  async function runExec(id, prompt, tools, raw) {
+    const full = raw ? prompt : execPrompt({ text: prompt, hostDataDir: config.hostDataDir, tools });
+    const { r, out } = await call(full, tools, 10, EXEC_TIMEOUT_SEC);
     addUsage(id, r);
     if (r.status === 'failed') {
       update(id, { status: 'failed', error: r.error, result: r.result ?? (out?.stderr ? out.stderr.slice(-2000) : null) });
     } else {
-      update(id, { status: 'done', result: r.result, is_ras: isRas(r.result) ? 1 : 0, error: null });
+      const block = raw ? null : extractJsonBlock(r.result);
+      const text = raw ? r.result : stripJsonBlock(r.result);
+      update(id, { status: 'done', result: text, is_ras: isRas(text) ? 1 : 0, suggest_ronde: block?.ronde === true ? 1 : 0, error: null });
     }
   }
 
@@ -185,16 +207,16 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     },
 
     /** Lance une demande. Retourne { id, done } ou null si une demande tourne déjà. */
-    start(kind, text, tools) {
+    start(kind, text, tools, { raw = false, title = text, history = [] } = {}) {
       if (busy) return null;
       const now = nowIso();
-      const messages = kind === 'design' ? [{ role: 'user', text }] : [];
+      const messages = kind === 'design' ? [...history, { role: 'user', text }] : [];
       const id = Number(
         q(
           `INSERT INTO asks (kind, status, title, allowed_tools, messages, created_at, updated_at) VALUES (?, 'running', ?, ?, ?, ?, ?)`,
-        ).run(kind, text.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), now, now).lastInsertRowid,
+        ).run(kind, title.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), now, now).lastInsertRowid,
       );
-      const done = launch(id, () => (kind === 'exec' ? runExec(id, text, tools) : runDesignTurn(id)));
+      const done = launch(id, () => (kind === 'exec' ? runExec(id, text, tools, raw) : runDesignTurn(id)));
       // Ménage : on ne garde que les dernières demandes.
       q(`DELETE FROM asks WHERE id NOT IN (SELECT id FROM asks ORDER BY created_at DESC, id DESC LIMIT ${HISTORY})`).run();
       return { id, done };

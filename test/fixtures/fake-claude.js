@@ -14,6 +14,8 @@ process.stdin.on('end', () => {
     case 'exit': out({ result: 'RAS' }); process.exitCode = 2; return;
     case 'garbage': return process.stdout.write('pas du json');
     case 'env': return out({ result: JSON.stringify({ keys: Object.keys(process.env).sort(), args: process.argv.slice(2) }) });
+    case 'suggest': return out({ result: 'Il reste 36 Go libres sur 74 Go (47 %).\n\n```json\n{"ronde": true}\n```' });
+    case 'plain': return out({ result: 'Paris.\n\n```json\n{"ronde": false}\n```' });
     case 'designq': return out({ result: 'Je vois 34 IP bannies. À partir de quel pic veux-tu une alerte ?\n\n```json\n{"type": "question"}\n```' });
     case 'designp': return out({ result: 'Voici ma proposition.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Sécurité SSH', prompt: 'Lis /host-metrics/fail2ban.txt. Réponds RAS si rien.', cron: '5 * * * *', allowed_tools: ['Read'], max_turns: 4 } }) + '\n```' });
     case 'fork':

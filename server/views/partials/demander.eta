@@ -1,26 +1,13 @@
 <section class="demander" id="demander" aria-labelledby="t-demander">
   <h2 id="t-demander">Demander à Claude</h2>
   <% if (it.askBusy) { %><p class="note attention">Une demande est déjà en cours. Attends sa réponse avant d'en lancer une autre.</p><% } %>
-  <form method="post" action="/asks">
+  <form method="post" action="/asks" class="demander-form">
     <label for="ask-prompt" class="masque">Ta demande</label>
-    <textarea id="ask-prompt" name="prompt" rows="3" required maxlength="20000" placeholder="Par exemple : combien de place prennent les logs Docker en ce moment ? Ou : surveille les certificats TLS qui expirent bientôt."></textarea>
-    <div class="demander-bas">
-      <fieldset class="outils">
-        <legend>Outils pour une exécution</legend>
-        <% it.askTools.forEach((t) => { %>
-          <label class="case"><input type="checkbox" name="tools" value="<%= t %>" <%= t === 'Read' ? 'checked' : '' %>> <%= t %></label>
-        <% }) %>
-      </fieldset>
-      <div class="actions">
-        <button type="submit" name="action" value="exec">Exécuter maintenant</button>
-        <button type="submit" name="action" value="design" class="secondaire">Créer une ronde avec Claude</button>
-      </div>
-    </div>
-    <p class="aide">Exécuter : Claude répond tout de suite, sans mail. Créer une ronde : Claude lit les données du serveur, te pose ses questions puis propose une ronde. Les deux consomment ton quota Claude.</p>
+    <textarea id="ask-prompt" name="prompt" rows="2" required maxlength="20000" placeholder="Combien d'espace disque reste-t-il ?"></textarea>
+    <button type="submit">Envoyer</button>
   </form>
 
   <% if (it.asks.length) { %>
-  <h3>Demandes récentes</h3>
   <ul class="demandes">
     <% it.asks.forEach((a) => { %>
       <li>
