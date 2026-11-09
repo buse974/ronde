@@ -68,8 +68,6 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   const asks = createAsks({ db: store.db, config, claudeAuth });
   asks.recoverOrphans();
   app.locals.asks = asks;
-  /** Outils proposés dans « Demander à Claude » : Read, Grep, Glob + ceux autorisés via MCP. */
-  const askTools = () => [...new Set([...ASK_TOOLS, ...mcpAllowedTools(store)])];
   const mcp = mcpEndpoint(config);
 
   app.disable('x-powered-by');
@@ -252,7 +250,6 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       templates: TEMPLATES,
       dial: buildDial({ tasks, recentRuns, timezone: config.timezone }),
       asks: asks.recent(),
-      askTools: askTools(),
       askBusy: asks.busy || req.query.busy === '1',
       summary: summarize({ tasks, recentRuns, timezone: config.timezone }),
     });
@@ -275,10 +272,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     const text = String(req.body.prompt ?? '').trim();
     if (!text) return res.redirect('/tasks');
     if (text.length > 20_000) return res.status(400).view('error', { message: 'Demande trop longue (20 000 caractères maximum).' });
-    const allowed = askTools();
-    const picked = [].concat(req.body.tools ?? []).filter((t) => allowed.includes(t));
-    const kind = req.body.action === 'design' ? 'design' : 'exec';
-    const started = asks.start(kind, text, kind === 'design' ? mcpAllowedTools(store) : picked);
+    const started = asks.start('exec', text, ASK_TOOLS);
     if (!started) return res.redirect('/tasks?busy=1#demander');
     res.redirect(`/asks/${started.id}`);
   });
@@ -306,10 +300,20 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/asks/${req.ask.id}`);
   });
 
+  // « En faire une ronde » : conception guidée à partir de la demande et de la réponse.
+  app.post('/asks/:id/to-ronde', loadAsk, (req, res) => {
+    const a = req.ask;
+    const history = a.result ? [{ role: 'user', text: a.title }, { role: 'claude', text: a.result.slice(0, 4000) }] : [];
+    const text = a.result ? 'Fais-en une ronde.' : a.title;
+    const started = asks.start('design', text, mcpAllowedTools(store), { title: a.title, history });
+    if (!started) return res.status(409).view('ask', { ask: a, busy: true, error: 'Une demande est déjà en cours.' });
+    res.redirect(`/asks/${started.id}`);
+  });
+
   app.post('/asks/:id/try', loadAsk, (req, res) => {
     const p = req.ask.proposal;
     if (!p) return res.redirect(`/asks/${req.ask.id}`);
-    const started = asks.start('exec', p.prompt, p.allowed_tools ?? ['Read']);
+    const started = asks.start('exec', p.prompt, p.allowed_tools ?? ['Read'], { raw: true, title: `Essai : ${p.name}` });
     if (!started) return res.status(409).view('ask', { ask: req.ask, busy: true, error: 'Une demande est déjà en cours.' });
     res.redirect(`/asks/${started.id}`);
   });

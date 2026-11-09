@@ -426,3 +426,10 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
   .demandes li { grid-template-columns: 1fr auto; }
   .demandes li .quand { display: none; }
 }
+
+.demander-form { display: flex; gap: 0.75rem; align-items: flex-end; }
+.demander-form textarea { flex: 1; min-width: 0; margin: 0; resize: vertical; }
+.demander .demandes { margin-top: 1.25rem; }
+.suggestion { display: flex; gap: 1rem 1.5rem; align-items: center; flex-wrap: wrap; border: 1px solid var(--ras); border-radius: 10px; padding: 1rem 1.2rem; margin: 0 0 1.5rem; max-width: 52rem; background: color-mix(in srgb, var(--ras) 6%, var(--nuit)); }
+.suggestion p { margin: 0; flex: 1 1 22rem; }
+@media (max-width: 760px) { .demander-form { flex-direction: column; align-items: stretch; } }

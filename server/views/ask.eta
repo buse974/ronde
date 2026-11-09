@@ -11,7 +11,13 @@
     <div class="verdict petit-verdict"><%~ include('./partials/ask-status', { ...it, a }) %></div>
     <% if (a.error) { %><p class="note mal"><%= a.error %></p><% } %>
     <% if (a.result) { %><div class="reponse <%= a.status === 'failed' ? 'failed' : a.is_ras ? 'ok' : '' %>"><%= a.result %></div><% } %>
-    <p class="petit discret">Outils : <%= a.allowed_tools.length ? a.allowed_tools.join(', ') : 'aucun' %>. Coût estimé <%= h.cost(a.cost_usd) %>, <%= h.tokens(a.input_tokens) %> tokens en entrée, <%= h.tokens(a.output_tokens) %> en sortie.</p>
+    <% if (a.suggest_ronde) { %>
+    <div class="suggestion">
+      <p>Ça pourrait devenir une ronde : Claude referait cette vérification régulièrement et ne te préviendrait qu'en cas de problème. On la crée ?</p>
+      <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Oui, créer une ronde</button></form>
+    </div>
+    <% } %>
+    <p class="petit discret">Coût estimé <%= h.cost(a.cost_usd) %>.</p>
     <div class="actions">
       <a href="/tasks#demander" class="bouton secondaire">Nouvelle demande</a>
     </div>
