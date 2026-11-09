@@ -37,6 +37,8 @@ export function isDue(expr, timezone, minuteStart) {
  */
 export function createExecutor({ store, config, claudeAuth, mailer, log = console }) {
   const inFlight = new Set();
+  /** Passages en cours : runId → AbortController (bouton « Arrêter »). */
+  const controllers = new Map();
 
   async function execute(runId, task) {
     const auth = claudeAuth.resolve();
@@ -44,7 +46,10 @@ export function createExecutor({ store, config, claudeAuth, mailer, log = consol
     if (!auth) {
       outcome = { status: 'failed', error: 'Aucun token Claude configuré (Réglages).', duration_ms: 0 };
     } else {
+      const ctrl = new AbortController();
+      controllers.set(runId, ctrl);
       const res = await runClaude({
+        signal: ctrl.signal,
         prompt: task.prompt,
         allowedTools: task.allowed_tools,
         maxTurns: task.max_turns,
@@ -53,13 +58,15 @@ export function createExecutor({ store, config, claudeAuth, mailer, log = consol
         config,
         timezone: config.timezone,
       });
-      outcome = { ...classify(res), stderr: res.stderr, duration_ms: res.durationMs, token_type: auth.type };
+      controllers.delete(runId);
+      outcome = { ...classify(res), stderr: res.stderr, duration_ms: res.durationMs, token_type: auth.type, stopped: res.stopped };
       // Sans alerte (oneshot) : une réponse autre que RAS est une simple réponse.
       if (task.notify === false && outcome.status === 'alert') outcome.status = 'done';
     }
     store.finishRun(runId, outcome);
 
-    if (task.notify !== false && (outcome.status === 'alert' || outcome.status === 'failed')) {
+    // Pas de mail après un arrêt manuel : c'est toi qui l'as demandé.
+    if (task.notify !== false && !outcome.stopped && (outcome.status === 'alert' || outcome.status === 'failed')) {
       const to = store.getSetting('alert_email');
       try {
         const sent = await mailer.sendRunAlert({ to, task, run: { id: runId, ...outcome } });
@@ -91,6 +98,13 @@ export function createExecutor({ store, config, claudeAuth, mailer, log = consol
         .finally(() => inFlight.delete(done));
       inFlight.add(done);
       return { runId, done };
+    },
+    /** Arrête un passage en cours. Retourne true si un passage a été arrêté. */
+    stop(runId) {
+      const ctrl = controllers.get(runId);
+      if (!ctrl) return false;
+      ctrl.abort();
+      return true;
     },
     /** Attend la fin des runs en cours (arrêt propre, tests). */
     drain() {

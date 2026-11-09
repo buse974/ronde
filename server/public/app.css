@@ -453,3 +453,7 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .declenchement small { font-weight: 400; color: var(--brume); }
 .js [data-pour]:not([data-actif]) { display: none; }
 .garder { margin: 0 0 1.25rem; }
+
+.en-cours { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+.en-cours p { margin: 0; }
+.arreter { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.6rem; }

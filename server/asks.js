@@ -9,6 +9,7 @@ const DESIGN_TIMEOUT_SEC = 240;
 
 /** Outils proposés dans la zone « Demander à Claude ». */
 export const ASK_TOOLS = ['Read', 'Grep', 'Glob'];
+export const ASK_TIMEOUT_MIN = { exec: EXEC_TIMEOUT_SEC / 60, design: DESIGN_TIMEOUT_SEC / 60 };
 
 /** Dernier bloc ```json … ``` d'une réponse de Claude (ou null). */
 export function extractJsonBlock(text) {
@@ -115,6 +116,8 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
   const inFlight = new Set();
   /** État en direct des demandes en cours : étapes (outils) et texte partiel. */
   const live = new Map();
+  /** Demandes en cours : id → AbortController (bouton « Arrêter »). */
+  const controllers = new Map();
 
   function onEventFor(id) {
     const state = { steps: [], text: '' };
@@ -171,13 +174,16 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
   async function call(id, prompt, allowedTools, maxTurns, timeoutSec) {
     const auth = claudeAuth.resolve();
     if (!auth) return { r: { status: 'failed', error: 'Aucun token Claude configuré (Réglages).' }, out: null };
+    const ctrl = new AbortController();
+    controllers.set(id, ctrl);
     try {
       const out = await runClaude({
-        prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone: config.timezone, onEvent: onEventFor(id),
+        prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone: config.timezone, onEvent: onEventFor(id), signal: ctrl.signal,
       });
       return { r: classify(out), out };
     } finally {
       live.delete(id);
+      controllers.delete(id);
     }
   }
 
@@ -290,6 +296,14 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
       if (busy || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
       update(id, { status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
       return { done: launch(id, () => (ask.kind === 'exec' ? runExec(id, false) : runDesignTurn(id))) };
+    },
+
+    /** Arrête une demande en cours. Retourne true si elle tournait. */
+    stop(id) {
+      const ctrl = controllers.get(id);
+      if (!ctrl) return false;
+      ctrl.abort();
+      return true;
     },
 
     /** État en direct d'une demande en cours (ou null). */
