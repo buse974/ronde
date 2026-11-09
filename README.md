@@ -1,3 +1,5 @@
+<p align="center"><img src="server/public/logo.svg" width="96" alt="ronde"></p>
+
 # ronde
 
 Planificateur de tâches Claude auto-hébergé, open source.
