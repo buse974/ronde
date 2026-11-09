@@ -7,7 +7,9 @@
     <p>
       <% if (t.cron) { %><%= h.cronText(t.cron) %> <span class="discret">(<code><%= t.cron %></code>)</span>.
         <% if (t.active) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } else { %><span class="pastille">En pause</span><% } %>
-      <% } else { %>Ronde manuelle, lancée à la demande.<% } %>
+      <% } else if (t.run_at) { %><%= h.triggerText(t) %>.<% if (!t.active) { %> <span class="pastille">Passé</span><% } %>
+      <% } else { %>Oneshot, lancé à la main.<% } %>
+      <% if (!t.notify) { %> <span class="pastille">Sans alerte mail</span><% } %>
       <% if (t.created_via === 'mcp') { %> <span class="pastille">Créée par Claude via MCP</span><% } %>
     </p>
   </div>

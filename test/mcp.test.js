@@ -172,7 +172,7 @@ describe('outils MCP', () => {
     expect(bash.text).toContain('non autorisés via MCP');
 
     const created = await call(app, tok, 'create_ronde', { name: 'Audit fail2ban', prompt: 'MODE:ok', allowed_tools: ['Read'] });
-    expect(created.data).toMatchObject({ cree: true, mode: 'manuelle', creee_via: 'mcp' });
+    expect(created.data).toMatchObject({ cree: true, mode: 'oneshot', creee_via: 'mcp' });
     const id = created.data.id;
 
     const upd = await call(app, tok, 'update_ronde', { id, cron: '5 * * * *' });

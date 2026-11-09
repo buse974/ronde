@@ -1,11 +1,11 @@
 <% const t = it.t, h = it.h; %>
-<tr id="task-<%= t.id %>" class="<%= t.cron && !t.active ? 'endormie' : '' %>">
+<tr id="task-<%= t.id %>" class="<%= !t.active ? 'endormie' : '' %>">
   <td class="nom">
     <a href="/tasks/<%= t.id %>"><%= t.name %></a>
     <% if (t.created_via === 'mcp') { %> <span class="pastille" title="Créée par Claude via MCP">MCP</span><% } %>
   </td>
-  <td class="masque-mobile"><% if (t.cron) { %><span title="<%= t.cron %>"><%= h.cronText(t.cron) %></span><% } else { %><span class="pastille">Manuelle</span><% } %></td>
-  <td class="masque-mobile quand"><%= t.cron && t.active ? h.nextRun(t.cron) : '—' %></td>
+  <td class="masque-mobile"><span title="<%= t.cron || '' %>"><%= h.triggerText(t) %></span></td>
+  <td class="masque-mobile quand"><%= !t.active ? (t.run_at ? 'passé' : '—') : t.cron ? h.nextRun(t.cron) : h.short(t.run_at) %></td>
   <td>
     <% if (t.last_run_id) { %>
       <a href="/runs/<%= t.last_run_id %>" class="etat <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></a>
@@ -18,7 +18,7 @@
     <form method="post" action="/tasks/<%= t.id %>/run" class="en-ligne">
       <button type="submit" class="secondaire compact">Lancer</button>
     </form>
-    <% if (t.cron) { %>
+    <% if (t.cron || (t.run_at && t.active)) { %>
     <form method="post" action="/tasks/<%= t.id %>/toggle" hx-post="/tasks/<%= t.id %>/toggle" hx-trigger="change" hx-target="#task-<%= t.id %>" hx-swap="outerHTML" class="en-ligne">
       <input type="checkbox" class="interrupteur" <%= t.active ? 'checked' : '' %> aria-label="Ronde active">
     </form>

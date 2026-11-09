@@ -3,8 +3,9 @@
 <% const field = (k) => e[k] ? 'aria-invalid="true"' : '' %>
 <p class="petit"><a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>"><%= editing ? it.task.name : 'Toutes les rondes' %></a></p>
 <h1><%= editing ? 'Modifier la ronde' : 'Nouvelle ronde' %></h1>
+<% if (it.kept) { %><p class="note bien">Oneshot enregistré. Donne-lui un nom parlant et ajuste le prompt si besoin.</p><% } %>
 <% if (it.fromAsk) { %><p class="note bien">Proposition de Claude préremplie. Relis-la, ajuste si besoin, puis crée la ronde. <a href="/asks/<%= it.fromAsk %>">Revenir à la conversation</a></p><% } %>
-<form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" style="max-width:52rem;margin-top:1.5rem">
+<form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" data-ronde style="max-width:52rem;margin-top:1.5rem">
   <label>Nom
     <input name="name" value="<%= v.name %>" required maxlength="100" <%~ field('name') %>>
     <% if (e.name) { %><small class="erreur"><%= e.name %></small><% } %>
@@ -15,17 +16,38 @@
     <small class="<%= e.prompt ? 'erreur' : '' %>"><%= e.prompt ?? 'Demande à Claude de répondre exactement « RAS » s’il n’y a rien à signaler. Toute autre réponse déclenche une alerte.' %></small>
   </label>
 
-  <div class="deux">
-    <label>Fréquence (cron, fuseau <%= it.timezone %>)
-      <input name="cron" value="<%= v.cron %>" placeholder="vide : ronde manuelle" <%~ field('cron') %>
-        hx-get="/cron-preview" hx-trigger="load, input changed delay:300ms" hx-target="#cron-preview" hx-sync="this:replace">
-      <small id="cron-preview" class="<%= e.cron ? 'erreur' : '' %>"><%= e.cron ?? '' %></small>
+  <fieldset>
+    <legend>Déclenchement</legend>
+    <div class="declenchement" role="radiogroup">
+      <label><input type="radio" name="trigger" value="cron" <%= v.trigger === 'cron' ? 'checked' : '' %>> Planifiée <small>à intervalles réguliers</small></label>
+      <label><input type="radio" name="trigger" value="oneshot" <%= v.trigger === 'oneshot' ? 'checked' : '' %>> Oneshot <small>lancé à la main</small></label>
+      <label><input type="radio" name="trigger" value="once" <%= v.trigger === 'once' ? 'checked' : '' %>> Une seule fois <small>à une date</small></label>
+    </div>
+    <div class="deux">
+      <div data-pour="cron">
+        <label>Fréquence (cron, fuseau <%= it.timezone %>)
+          <input name="cron" value="<%= v.cron %>" placeholder="0 * * * *" <%~ field('cron') %>
+            hx-get="/cron-preview" hx-trigger="load, input changed delay:300ms" hx-target="#cron-preview" hx-sync="this:replace">
+          <small id="cron-preview" class="<%= e.cron ? 'erreur' : '' %>"><%= e.cron ?? '' %></small>
+        </label>
+      </div>
+      <div data-pour="once">
+        <label>Date et heure (<%= it.timezone %>)
+          <input type="datetime-local" name="run_at" value="<%= v.run_at_local ?? '' %>" <%~ field('run_at') %>>
+          <small class="<%= e.run_at ? 'erreur' : '' %>"><%= e.run_at ?? 'La ronde se lance une fois à cette heure, puis se met en pause.' %></small>
+        </label>
+      </div>
+    </div>
+    <label class="case">
+      <input type="checkbox" name="notify" <%= v.notify ? 'checked' : '' %>> Alerter par mail si la réponse n'est pas « RAS »
     </label>
-    <label>Outils autorisés, un par ligne
-      <textarea name="allowed_tools" rows="3" placeholder="Read&#10;Bash(df:*)" <%~ field('allowed_tools') %>><%= (v.allowed_tools || []).join('\n') %></textarea>
-      <small class="<%= e.allowed_tools ? 'erreur' : '' %>"><%= e.allowed_tools ?? 'Vide : aucun outil. Claude ne dispose que de ces outils.' %></small>
-    </label>
-  </div>
+    <p class="aide">Décoché, Claude répond simplement : pas de mail, et la réponse s'affiche comme « Réponse » plutôt qu'« Alerte ».</p>
+  </fieldset>
+
+  <label>Outils autorisés, un par ligne
+    <textarea name="allowed_tools" rows="3" placeholder="Read&#10;Bash(df:*)" <%~ field('allowed_tools') %>><%= (v.allowed_tools || []).join('\n') %></textarea>
+    <small class="<%= e.allowed_tools ? 'erreur' : '' %>"><%= e.allowed_tools ?? 'Vide : aucun outil. Claude ne dispose que de ces outils.' %></small>
+  </label>
 
   <div class="deux">
     <label>Tours maximum
@@ -38,9 +60,8 @@
     </label>
   </div>
 
-  <label class="case">
+  <label class="case" data-pour="cron">
     <input type="checkbox" class="interrupteur" name="active" <%= v.active ? 'checked' : '' %>> Active
-    <span class="petit discret">(sans effet pour une ronde manuelle)</span>
   </label>
 
   <div class="actions" style="margin-top:1.5rem">

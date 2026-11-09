@@ -54,10 +54,12 @@ export function createExecutor({ store, config, claudeAuth, mailer, log = consol
         timezone: config.timezone,
       });
       outcome = { ...classify(res), stderr: res.stderr, duration_ms: res.durationMs, token_type: auth.type };
+      // Sans alerte (oneshot) : une réponse autre que RAS est une simple réponse.
+      if (task.notify === false && outcome.status === 'alert') outcome.status = 'done';
     }
     store.finishRun(runId, outcome);
 
-    if (outcome.status === 'alert' || outcome.status === 'failed') {
+    if (task.notify !== false && (outcome.status === 'alert' || outcome.status === 'failed')) {
       const to = store.getSetting('alert_email');
       try {
         const sent = await mailer.sendRunAlert({ to, task, run: { id: runId, ...outcome } });
@@ -114,6 +116,13 @@ export function startScheduler({ store, executor, timezone, log = console, now =
       const run = executor.start(task, 'schedule');
       if (run) started.push(run);
       else log.warn(`[ronde] « ${task.name} » : run précédent encore en cours, exécution sautée`);
+    }
+    // Passages uniques : lancés une fois, puis la tâche se désactive.
+    for (const task of store.listDueOnce(new Date(minuteStart + MINUTE - 1).toISOString())) {
+      const run = executor.start(task, 'schedule');
+      if (!run) continue; // un passage tourne encore : nouvel essai la minute suivante
+      store.setTaskActive(task.id, false);
+      started.push(run);
     }
     return started;
   }
