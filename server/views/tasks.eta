@@ -30,6 +30,8 @@
   </div>
 </section>
 
+<%~ include('./partials/demander', it) %>
+
 <% if (!it.tokenStatus.configured) { %>
 <p class="note attention">Aucun token Claude : les rondes échoueront. <a href="/settings">Ajouter le token dans les réglages</a>.</p>
 <% } %>

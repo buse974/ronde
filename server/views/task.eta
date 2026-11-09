@@ -43,14 +43,23 @@
   <tbody>
   <% it.runs.forEach((r) => { %>
     <% if (r.group) { %>
+    <% const de = h.short(r.oldest.started_at), a = h.short(r.newest.started_at); %>
     <tr class="regroupe">
-      <% const de = h.short(r.oldest.started_at), a = h.short(r.newest.started_at); %>
-      <td class="quand"><%= de %> à <%= de.split(' ')[0] === a.split(' ')[0] ? a.split(' ').pop() : a %></td>
-      <td><span class="etat ok">RAS</span></td>
-      <td><%= r.count %> passages sans rien à signaler</td>
-      <td class="masque-mobile chiffre"></td>
-      <td class="masque-mobile chiffre"></td>
-      <td class="masque-mobile chiffre"><%= h.cost(r.cost) %></td>
+      <td colspan="6">
+        <details class="passages">
+          <summary>
+            <span class="quand"><%= de %> à <%= de.split(' ')[0] === a.split(' ')[0] ? a.split(' ').pop() : a %></span>
+            <span class="etat ok">RAS</span>
+            <span><%= r.count %> passages sans rien à signaler</span>
+            <span class="cout"><%= h.cost(r.cost) %></span>
+          </summary>
+          <ul>
+          <% r.runs.forEach((x) => { %>
+            <li><a href="/runs/<%= x.id %>"><%= h.short(x.started_at) %></a><span class="discret"><%= x.trigger === 'manual' ? 'à la demande' : 'planifié' %></span><span class="discret"><%= h.duration(x.duration_ms) %></span><span class="cout"><%= h.cost(x.cost_usd) %></span></li>
+          <% }) %>
+          </ul>
+        </details>
+      </td>
     </tr>
     <% return; } %>
     <tr>

@@ -1,0 +1,6 @@
+<% const a = it.a; %>
+<% if (a.status === 'running') { %><span class="etat running">En cours</span>
+<% } else if (a.status === 'failed') { %><span class="etat failed">Échec</span>
+<% } else if (a.kind === 'design') { %><span class="etat <%= a.status === 'proposal' ? 'ok' : 'running' %>"><%= a.status === 'proposal' ? 'Ronde proposée' : 'Question pour toi' %></span>
+<% } else if (a.is_ras) { %><span class="etat ok">RAS</span>
+<% } else { %><span class="etat fait">Réponse</span><% } %>

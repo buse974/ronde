@@ -3,6 +3,7 @@
 <% const field = (k) => e[k] ? 'aria-invalid="true"' : '' %>
 <p class="petit"><a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>"><%= editing ? it.task.name : 'Toutes les rondes' %></a></p>
 <h1><%= editing ? 'Modifier la ronde' : 'Nouvelle ronde' %></h1>
+<% if (it.fromAsk) { %><p class="note bien">Proposition de Claude préremplie. Relis-la, ajuste si besoin, puis crée la ronde. <a href="/asks/<%= it.fromAsk %>">Revenir à la conversation</a></p><% } %>
 <form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" style="max-width:52rem;margin-top:1.5rem">
   <label>Nom
     <input name="name" value="<%= v.name %>" required maxlength="100" <%~ field('name') %>>

@@ -113,6 +113,7 @@ export function groupRuns(runs, min = 3) {
     if (streak.length >= min) {
       out.push({
         group: true,
+        runs: streak,
         count: streak.length,
         newest: streak[0],
         oldest: streak[streak.length - 1],
