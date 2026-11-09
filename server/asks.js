@@ -47,7 +47,12 @@ function hostDataListing(dir) {
  * Prompt d'une exécution ponctuelle : un court contexte (où Claude tourne,
  * quelles données du serveur il peut lire), puis la demande telle quelle.
  */
-export function execPrompt({ text, hostDataDir, tools }) {
+export function execPrompt({ text, hostDataDir, tools, history = [] }) {
+  const previous = history.length
+    ? `Échanges précédents de cette conversation :\n\n${history
+        .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi : ${m.text}`))
+        .join('\n\n')}\n\n`
+    : '';
   return `Contexte : tu tournes dans le conteneur de « ronde », sur un serveur Linux, sans personne pour te répondre. Tu ne vois pas directement le système de l'hôte : un df ou un ps ici ne décriraient que le conteneur. Les données de l'hôte sont relevées toutes les 15 minutes dans /host-metrics, lisibles avec l'outil Read :
 ${hostDataListing(hostDataDir)}
 Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
@@ -56,8 +61,23 @@ Réponds en français, de façon concise, en citant les chiffres et l'heure de l
 Ensuite, évalue si cette demande gagnerait à devenir une « ronde » : une vérification que Claude referait régulièrement et qui n'alerterait qu'en cas de problème (espace disque, sécurité, sauvegardes, certificats, dérive d'une valeur…). Une question ponctuelle, une explication ou une demande d'information générale n'est pas une ronde.
 Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant {"ronde": true} ou {"ronde": false}. N'en parle pas dans ta réponse : l'interface pose elle-même la question.
 
-Demande :
+${previous}Demande :
 ${text}`;
+}
+
+/** Libellé d'une étape en cours, à partir d'un appel d'outil de Claude. */
+export function describeTool(name, input = {}) {
+  const host = (p) => String(p ?? '').replace(/^.*\/host-metrics/, '/host-metrics');
+  if (name === 'Read') return `Lecture de ${host(input.file_path)}`;
+  if (name === 'Glob') return `Recherche de fichiers : ${input.pattern ?? ''}`;
+  if (name === 'Grep') return `Recherche de « ${input.pattern ?? ''} »${input.path ? ` dans ${host(input.path)}` : ''}`;
+  return `Outil ${name}`;
+}
+
+/** Texte en cours d'écriture, sans le bloc JSON final (même incomplet). */
+export function visibleText(text) {
+  const i = String(text ?? '').indexOf('```json');
+  return (i >= 0 ? text.slice(0, i) : String(text ?? '')).trim();
 }
 
 /** Prompt d'un tour de conception : consignes, données disponibles, conversation. */
@@ -93,13 +113,37 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
   let busy = false;
   const inFlight = new Set();
+  /** État en direct des demandes en cours : étapes (outils) et texte partiel. */
+  const live = new Map();
+
+  function onEventFor(id) {
+    const state = { steps: [], text: '' };
+    live.set(id, state);
+    return (e) => {
+      if (e.type === 'stream_event') {
+        if (e.event?.type === 'message_start') state.text = '';
+        const d = e.event?.delta;
+        if (e.event?.type === 'content_block_delta' && d?.type === 'text_delta') state.text += d.text;
+      } else if (e.type === 'assistant') {
+        for (const c of e.message?.content ?? []) {
+          if (c.type === 'tool_use') state.steps.push(describeTool(c.name, c.input));
+        }
+      }
+      if (state.steps.length > 30) state.steps.splice(0, state.steps.length - 30);
+    };
+  }
 
   const parse = (row) =>
     row && {
       ...row,
       suggest_ronde: !!row.suggest_ronde,
       allowed_tools: JSON.parse(row.allowed_tools),
-      messages: JSON.parse(row.messages),
+      // Demandes d'avant la conversation : on reconstitue l'échange.
+      messages: (() => {
+        const m = JSON.parse(row.messages);
+        if (m.length || row.kind !== 'exec') return m;
+        return [{ role: 'user', text: row.title }, ...(row.result ? [{ role: 'claude', text: row.result }] : [])];
+      })(),
       proposal: row.proposal ? JSON.parse(row.proposal) : null,
       is_ras: row.is_ras == null ? null : !!row.is_ras,
     };
@@ -124,24 +168,41 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     );
   }
 
-  async function call(prompt, allowedTools, maxTurns, timeoutSec) {
+  async function call(id, prompt, allowedTools, maxTurns, timeoutSec) {
     const auth = claudeAuth.resolve();
     if (!auth) return { r: { status: 'failed', error: 'Aucun token Claude configuré (Réglages).' }, out: null };
-    const out = await runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone: config.timezone });
-    return { r: classify(out), out };
+    try {
+      const out = await runClaude({
+        prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone: config.timezone, onEvent: onEventFor(id),
+      });
+      return { r: classify(out), out };
+    } finally {
+      live.delete(id);
+    }
   }
 
   /** raw = prompt envoyé tel quel (essai d'une ronde proposée, comme un vrai passage). */
-  async function runExec(id, prompt, tools, raw) {
-    const full = raw ? prompt : execPrompt({ text: prompt, hostDataDir: config.hostDataDir, tools });
-    const { r, out } = await call(full, tools, 10, EXEC_TIMEOUT_SEC);
+  async function runExec(id, raw) {
+    const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
+    const tools = ask.allowed_tools;
+    const question = ask.messages.at(-1).text;
+    const full = raw ? question : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, tools });
+    const { r, out } = await call(id, full, tools, 10, EXEC_TIMEOUT_SEC);
     addUsage(id, r);
     if (r.status === 'failed') {
-      update(id, { status: 'failed', error: r.error, result: r.result ?? (out?.stderr ? out.stderr.slice(-2000) : null) });
+      const detail = r.result ?? (out?.stderr ? out.stderr.slice(-2000) : null);
+      update(id, { status: 'failed', error: r.error, result: detail });
     } else {
       const block = raw ? null : extractJsonBlock(r.result);
-      const text = raw ? r.result : stripJsonBlock(r.result);
-      update(id, { status: 'done', result: text, is_ras: isRas(text) ? 1 : 0, suggest_ronde: block?.ronde === true ? 1 : 0, error: null });
+      const text = (raw ? r.result : stripJsonBlock(r.result)) || '(réponse vide)';
+      update(id, {
+        status: 'done',
+        result: text,
+        is_ras: isRas(text) ? 1 : 0,
+        suggest_ronde: block?.ronde === true ? 1 : 0,
+        messages: JSON.stringify([...ask.messages, { role: 'claude', text }]),
+        error: null,
+      });
     }
   }
 
@@ -149,7 +210,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
     const allowed = ask.allowed_tools;
     const prompt = designPrompt({ messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed });
-    const { r } = await call(prompt, ['Read', 'Glob'], 8, DESIGN_TIMEOUT_SEC);
+    const { r } = await call(id, prompt, ['Read', 'Glob'], 8, DESIGN_TIMEOUT_SEC);
     addUsage(id, r);
     if (r.status === 'failed') {
       update(id, { status: 'failed', error: r.error });
@@ -210,25 +271,31 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     start(kind, text, tools, { raw = false, title = text, history = [] } = {}) {
       if (busy) return null;
       const now = nowIso();
-      const messages = kind === 'design' ? [...history, { role: 'user', text }] : [];
+      const messages = [...history, { role: 'user', text }];
       const id = Number(
         q(
           `INSERT INTO asks (kind, status, title, allowed_tools, messages, created_at, updated_at) VALUES (?, 'running', ?, ?, ?, ?, ?)`,
         ).run(kind, title.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), now, now).lastInsertRowid,
       );
-      const done = launch(id, () => (kind === 'exec' ? runExec(id, text, tools, raw) : runDesignTurn(id)));
+      const done = launch(id, () => (kind === 'exec' ? runExec(id, raw) : runDesignTurn(id)));
       // Ménage : on ne garde que les dernières demandes.
       q(`DELETE FROM asks WHERE id NOT IN (SELECT id FROM asks ORDER BY created_at DESC, id DESC LIMIT ${HISTORY})`).run();
       return { id, done };
     },
 
-    /** Réponse de l'administrateur dans une conception. Retourne { done } ou une erreur. */
+    /** Suite de la conversation (demande ponctuelle ou conception). Retourne { done } ou { error }. */
     reply(id, text) {
       const ask = this.get(id);
-      if (!ask || ask.kind !== 'design') return { error: 'Demande introuvable.' };
+      if (!ask) return { error: 'Demande introuvable.' };
       if (busy || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
-      update(id, { status: 'running', messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
-      return { done: launch(id, () => runDesignTurn(id)) };
+      update(id, { status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
+      return { done: launch(id, () => (ask.kind === 'exec' ? runExec(id, false) : runDesignTurn(id))) };
+    },
+
+    /** État en direct d'une demande en cours (ou null). */
+    live(id) {
+      const s = live.get(id);
+      return s ? { steps: [...s.steps], text: visibleText(s.text) } : null;
     },
 
     get(id) {

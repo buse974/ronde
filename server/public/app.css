@@ -319,10 +319,6 @@ input[type='checkbox'].interrupteur:checked::after { transform: translateX(1.05r
 .registre .fin form + form { margin-left: 0.5rem; }
 .defile { overflow-x: auto; margin: 0 0 1rem; }
 
-.modeles { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; margin-top: 3rem; }
-.modele { border: 1px dashed var(--trait); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
-.modele h3 { margin-bottom: 0.35rem; }
-.modele p { color: var(--brume); margin-bottom: 0.8rem; }
 .vide { padding: 2rem 0; color: var(--brume); }
 
 /* --- Page d'une ronde -------------------------------------------------- */
@@ -433,3 +429,15 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .suggestion { display: flex; gap: 1rem 1.5rem; align-items: center; flex-wrap: wrap; border: 1px solid var(--ras); border-radius: 10px; padding: 1rem 1.2rem; margin: 0 0 1.5rem; max-width: 52rem; background: color-mix(in srgb, var(--ras) 6%, var(--nuit)); }
 .suggestion p { margin: 0; flex: 1 1 22rem; }
 @media (max-width: 760px) { .demander-form { flex-direction: column; align-items: stretch; } }
+
+.en-direct .bulle { border-style: dashed; }
+.etapes-direct { list-style: none; margin: 0 0 0.5rem; padding: 0; display: grid; gap: 0.2rem; font-size: var(--step--1); color: var(--brume); white-space: normal; }
+.etapes-direct li::before { content: '✓'; color: var(--ras); margin-right: 0.45rem; }
+.etapes-direct li.active::before { content: '•'; color: var(--cours); }
+.curseur { display: inline-block; width: 0.5em; height: 1em; margin-left: 2px; vertical-align: -0.15em; background: var(--cours); }
+.attente { margin: 0; }
+.bulle.claude.ras { border-color: var(--ras); }
+@media (prefers-reduced-motion: no-preference) {
+  .curseur { animation: veille 1s steps(2) infinite; }
+  .etapes-direct li.active::before, .attente { animation: veille 1.4s ease-in-out infinite; }
+}

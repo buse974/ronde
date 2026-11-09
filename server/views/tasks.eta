@@ -52,16 +52,3 @@
 </div>
 <p class="petit discret">Le coût est un équivalent API indicatif. Avec un token d'abonnement, rien n'est facturé à part : c'est pris sur ton quota.</p>
 <% } %>
-
-<section class="modeles" aria-label="Modèles">
-  <% Object.entries(it.templates).forEach(([key, t]) => { %>
-  <div class="modele">
-    <h3><%= t.name %></h3>
-    <p><%= t.summary %></p>
-    <p class="petit">Données fournies par <code><%= t.requires %></code> sur le serveur.</p>
-    <form method="post" action="/tasks/template/<%= key %>">
-      <button type="submit" class="secondaire compact">Créer depuis ce modèle</button>
-    </form>
-  </div>
-  <% }) %>
-</section>
