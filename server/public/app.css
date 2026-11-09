@@ -224,6 +224,7 @@ input[type='checkbox'].interrupteur:checked::after { transform: translateX(1.05r
 .etat.running { color: var(--cours); }
 .etat.running::before { animation: veille 1.4s ease-in-out infinite; }
 .etat.aucun { color: var(--brume-2); font-weight: 500; }
+.etat.done { color: var(--craie); }
 .etat.aucun::before { background: transparent; border: 1.5px solid currentColor; }
 @keyframes veille { 50% { opacity: 0.25; } }
 .pastille { display: inline-block; font-size: var(--step--1); font-weight: 600; font-stretch: 85%; padding: 0.1rem 0.5rem; border-radius: 999px; border: 1px solid var(--trait); color: var(--brume); white-space: nowrap; }
@@ -258,6 +259,7 @@ input[type='checkbox'].interrupteur:checked::after { transform: translateX(1.05r
 .cadran .point.alert { fill: var(--alerte); }
 .cadran .point.failed { fill: var(--echec); }
 .cadran .point.running { fill: var(--cours); }
+.cadran .point.done { fill: var(--craie); }
 .cadran .aiguille { stroke: var(--craie); stroke-width: 2.5; stroke-linecap: round; }
 .cadran .pivot { fill: var(--craie); }
 .legende { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; font-size: var(--step--1); color: var(--brume); }
@@ -330,6 +332,7 @@ input[type='checkbox'].interrupteur:checked::after { transform: translateX(1.05r
 .bande span.ok { background: var(--ras); }
 .bande span.alert { background: var(--alerte); }
 .bande span.failed { background: var(--echec); }
+.bande span.done { background: var(--brume); }
 .chiffres { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 0.25rem 2rem; margin: 1.5rem 0 2.5rem; }
 .chiffres p { color: var(--brume); margin: 0; }
 .chiffres strong { color: var(--craie); font-weight: 600; }
@@ -441,3 +444,12 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
   .curseur { animation: veille 1s steps(2) infinite; }
   .etapes-direct li.active::before, .attente { animation: veille 1.4s ease-in-out infinite; }
 }
+
+/* --- Déclenchement (formulaire) ------------------------------------------ */
+.declenchement { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0 0 1.1rem; }
+.declenchement label { display: flex; align-items: center; gap: 0.5rem; margin: 0; padding: 0.55rem 0.9rem; border: 1px solid var(--trait); border-radius: var(--radius); cursor: pointer; font-weight: 600; }
+.declenchement label:has(input:checked) { border-color: var(--craie); background: var(--nuit-2); }
+.declenchement input { width: auto; margin: 0; accent-color: var(--craie); }
+.declenchement small { font-weight: 400; color: var(--brume); }
+.js [data-pour]:not([data-actif]) { display: none; }
+.garder { margin: 0 0 1.25rem; }

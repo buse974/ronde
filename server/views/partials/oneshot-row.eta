@@ -1,0 +1,18 @@
+<% const t = it.t, h = it.h; %>
+<tr id="task-<%= t.id %>">
+  <td class="nom">
+    <a href="/tasks/<%= t.id %>"><%= t.name %></a>
+    <% if (t.created_via === 'mcp') { %> <span class="pastille" title="Créé par Claude via MCP">MCP</span><% } %>
+  </td>
+  <td>
+    <% if (t.last_run_id) { %>
+      <a href="/runs/<%= t.last_run_id %>" class="etat <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></a>
+      <span class="quand petit"><%= h.ago(t.last_started_at) %></span>
+      <% if (t.last_excerpt && t.last_status !== 'ok') { %><div class="extrait petit"><%= t.last_excerpt %></div><% } %>
+    <% } else { %><span class="etat aucun">Jamais lancé</span><% } %>
+  </td>
+  <td class="masque-mobile chiffre"><%= h.cost(t.cost_30d) %></td>
+  <td class="fin">
+    <form method="post" action="/tasks/<%= t.id %>/run" class="en-ligne"><button type="submit" class="compact">Lancer</button></form>
+  </td>
+</tr>

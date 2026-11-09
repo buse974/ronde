@@ -25,7 +25,7 @@ import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
 import { classify, runClaude } from './runner.js';
 import { nextRuns, cronError } from './scheduler.js';
-import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema } from './validation.js';
+import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema, triggerOf, utcToLocal } from './validation.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_SIZE = 50;
@@ -258,8 +258,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.view('task-form', {
       task: null,
       values: proposal
-        ? { ...proposal, active: true }
-        : { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 600, active: true },
+        ? { ...proposal, active: true, notify: true, trigger: proposal.cron ? 'cron' : 'oneshot' }
+        : { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 600, active: true, notify: true, trigger: 'cron' },
       errors: {},
       fromAsk: proposal ? Number(req.query.from_ask) : null,
     });
@@ -308,6 +308,24 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/asks/${started.id}`);
   });
 
+  // « Garder en oneshot » : la demande devient un oneshot relançable en un clic.
+  app.post('/asks/:id/keep', loadAsk, (req, res) => {
+    const a = req.ask;
+    const question = a.messages.find((m) => m.role === 'user')?.text ?? a.title;
+    const id = store.createTask({
+      name: a.title.slice(0, 100),
+      prompt: `${question}\n\nLes données du serveur (disque, Docker, fail2ban…) sont relevées dans /host-metrics : lis-les avec l'outil Read. Réponds en français, de façon concise, avec les chiffres et l'heure de la mesure.`,
+      cron: '',
+      allowed_tools: ASK_TOOLS,
+      max_turns: 10,
+      timeout_sec: 300,
+      active: true,
+      notify: false,
+      run_at: null,
+    });
+    res.redirect(`/tasks/${id}/edit?kept=1`);
+  });
+
   app.post('/asks/:id/try', loadAsk, (req, res) => {
     const p = req.ask.proposal;
     if (!p) return res.redirect(`/asks/${req.ask.id}`);
@@ -352,7 +370,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   });
 
   app.get('/tasks/:id/edit', loadTask, (req, res) => {
-    res.view('task-form', { task: req.task, values: req.task, errors: {} });
+    res.view('task-form', {
+      kept: req.query.kept === '1',
+      task: req.task,
+      values: { ...req.task, trigger: triggerOf(req.task), run_at_local: utcToLocal(req.task.run_at, config.timezone) },
+      errors: {},
+    });
   });
 
   app.post('/tasks/:id', loadTask, (req, res) => {

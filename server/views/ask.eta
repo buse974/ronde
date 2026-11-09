@@ -19,6 +19,9 @@
   <% if (a.result) { %><details><summary>Détail</summary><pre><%= a.result %></pre></details><% } %>
 <% } %>
 
+<% if (a.kind === 'exec' && a.status === 'done' && !a.title.startsWith('Essai : ')) { %>
+<form method="post" action="/asks/<%= a.id %>/keep" class="garder"><button type="submit" class="secondaire compact">Garder en oneshot</button></form>
+<% } %>
 <% if (a.kind === 'exec' && a.suggest_ronde && a.status === 'done') { %>
 <div class="suggestion">
   <p>Ça pourrait devenir une ronde : Claude referait cette vérification régulièrement et ne te préviendrait qu'en cas de problème. On la crée ?</p>

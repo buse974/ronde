@@ -42,12 +42,18 @@ export function createHelpers(timezone) {
       const days = Math.round(hours / 24);
       return days === 1 ? 'hier' : `il y a ${days} jours`;
     },
-    statusLabel: (s) => ({ running: 'En cours', ok: 'RAS', alert: 'Alerte', failed: 'Échec' })[s] ?? '—',
+    statusLabel: (s) => ({ running: 'En cours', ok: 'RAS', alert: 'Alerte', failed: 'Échec', done: 'Réponse' })[s] ?? '—',
+    /** Déclenchement en clair. */
+    triggerText(t) {
+      if (t.cron) return this.cronText(t.cron);
+      if (t.run_at) return `Une fois, le ${shortFmt.format(new Date(t.run_at))}`;
+      return 'Oneshot';
+    },
     tokenTypeLabel: (t) => ({ oauth: 'Abonnement (quota Claude)', api: 'Clé API (facturée à l’usage)' })[t] ?? 'Inconnu',
   };
 }
 
-const SEVERITY = { ok: 1, alert: 2, failed: 3 };
+const SEVERITY = { ok: 1, done: 1, alert: 2, failed: 3 };
 
 /** Heure locale (fraction de jour, 0 à 1) dans le fuseau donné. */
 function dayFraction(date, timezone) {
@@ -84,6 +90,13 @@ export function buildDial({ tasks, recentRuns, timezone, now = new Date(), size 
   const limit = now.getTime() + 24 * 3600 * 1000;
   const upcoming = [];
   for (const t of tasks) {
+    if (t.run_at && t.active && !t.cron) {
+      const d = new Date(t.run_at);
+      if (d > now && d.getTime() <= limit) {
+        const f = dayFraction(d, timezone);
+        upcoming.push({ name: t.name, date: d, a: at(f, rInner - 6), b: at(f, rInner + 6) });
+      }
+    }
     if (!t.cron || !t.active) continue;
     for (const d of nextRuns(t.cron, timezone, 96, now)) {
       if (d.getTime() > limit || upcoming.length >= 400) break;
@@ -165,11 +178,11 @@ export function summarize({ tasks, recentRuns, timezone, now = new Date() }) {
 
   let next = null;
   for (const t of tasks) {
-    if (!t.cron || !t.active) continue;
-    const [d] = nextRuns(t.cron, timezone, 1, now);
+    if (!t.active) continue;
+    const [d] = t.cron ? nextRuns(t.cron, timezone, 1, now) : t.run_at && new Date(t.run_at) > now ? [new Date(t.run_at)] : [];
     if (d && (!next || d < next.date)) next = { date: d, name: t.name };
   }
-  const active = tasks.filter((t) => t.cron && t.active).length;
-  const manual = tasks.filter((t) => !t.cron).length;
+  const active = tasks.filter((t) => (t.cron || t.run_at) && t.active).length;
+  const manual = tasks.filter((t) => !t.cron && !t.run_at).length;
   return { title, alerts, failed, ok: count('ok'), total: recentRuns.length, next, active, manual };
 }

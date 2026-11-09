@@ -60,7 +60,8 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
     return {
       id: t.id,
       nom: t.name,
-      mode: t.cron ? 'planifiée' : 'manuelle',
+      mode: t.cron ? 'planifiée' : t.run_at ? 'une seule fois' : 'oneshot',
+      alerte_mail: t.notify !== false,
       cron: t.cron || null,
       prochain_run: t.cron && t.active ? nextRuns(t.cron, config.timezone, 1)[0]?.toISOString() ?? null : null,
       active: t.active,

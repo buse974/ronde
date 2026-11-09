@@ -4,7 +4,8 @@ import { nowIso } from './db.js';
 export function createStore(db) {
   const stmt = (sql) => db.prepare(sql);
 
-  const parseTask = (row) => row ? { ...row, active: !!row.active, allowed_tools: JSON.parse(row.allowed_tools) } : null;
+  const parseTask = (row) =>
+    row ? { ...row, active: !!row.active, notify: !!row.notify, allowed_tools: JSON.parse(row.allowed_tools) } : null;
 
   return {
     db,
@@ -56,23 +57,44 @@ export function createStore(db) {
       // Les tâches sans cron sont manuelles : le scheduler les ignore.
       return stmt("SELECT * FROM tasks WHERE active = 1 AND cron != ''").all().map(parseTask);
     },
+    /** Passages uniques arrivés à échéance. */
+    listDueOnce(untilIso) {
+      return stmt("SELECT * FROM tasks WHERE active = 1 AND cron = '' AND run_at IS NOT NULL AND run_at <= ?").all(untilIso).map(parseTask);
+    },
     getTask(id) {
       return parseTask(stmt('SELECT * FROM tasks WHERE id = ?').get(id));
     },
     createTask(t) {
       const now = nowIso();
       const info = stmt(
-        `INSERT INTO tasks (name, prompt, cron, allowed_tools, max_turns, timeout_sec, active, created_via, created_at, updated_at)
-         VALUES (@name, @prompt, @cron, @allowed_tools, @max_turns, @timeout_sec, @active, @created_via, @now, @now)`,
-      ).run({ ...t, allowed_tools: JSON.stringify(t.allowed_tools), active: t.active ? 1 : 0, created_via: t.created_via ?? 'ui', now });
+        `INSERT INTO tasks (name, prompt, cron, allowed_tools, max_turns, timeout_sec, active, created_via, run_at, notify, created_at, updated_at)
+         VALUES (@name, @prompt, @cron, @allowed_tools, @max_turns, @timeout_sec, @active, @created_via, @run_at, @notify, @now, @now)`,
+      ).run({
+        ...t,
+        allowed_tools: JSON.stringify(t.allowed_tools),
+        active: t.active ? 1 : 0,
+        created_via: t.created_via ?? 'ui',
+        run_at: t.run_at ?? null,
+        notify: t.notify === false ? 0 : 1,
+        now,
+      });
       return Number(info.lastInsertRowid);
     },
     updateTask(id, t) {
       stmt(
         `UPDATE tasks SET name = @name, prompt = @prompt, cron = @cron, allowed_tools = @allowed_tools,
-                max_turns = @max_turns, timeout_sec = @timeout_sec, active = @active, updated_at = @now
+                max_turns = @max_turns, timeout_sec = @timeout_sec, active = @active, run_at = @run_at,
+                notify = @notify, updated_at = @now
           WHERE id = @id`,
-      ).run({ ...t, id, allowed_tools: JSON.stringify(t.allowed_tools), active: t.active ? 1 : 0, now: nowIso() });
+      ).run({
+        ...t,
+        id,
+        allowed_tools: JSON.stringify(t.allowed_tools),
+        active: t.active ? 1 : 0,
+        run_at: t.run_at ?? null,
+        notify: t.notify === false ? 0 : 1,
+        now: nowIso(),
+      });
     },
     setTaskActive(id, active) {
       stmt('UPDATE tasks SET active = ?, updated_at = ? WHERE id = ?').run(active ? 1 : 0, nowIso(), id);

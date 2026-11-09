@@ -36,7 +36,8 @@
 <p class="note attention">Aucun token Claude : les rondes échoueront. <a href="/settings">Ajouter le token dans les réglages</a>.</p>
 <% } %>
 
-<% if (it.tasks.length) { %>
+<% const planifiees = it.tasks.filter((t) => t.cron || t.run_at), oneshots = it.tasks.filter((t) => !t.cron && !t.run_at); %>
+<% if (planifiees.length) { %>
 <div class="titre-section"><h2>Rondes</h2></div>
 <div class="defile">
 <table class="registre">
@@ -44,11 +45,24 @@
     <tr><th>Ronde</th><th class="masque-mobile">Fréquence</th><th class="masque-mobile">Prochain passage</th><th>Dernier résultat</th><th class="masque-mobile chiffre">Coût 30 j</th><th class="fin"><span class="discret">Active</span></th></tr>
   </thead>
   <tbody>
-    <% it.tasks.forEach((t) => { %>
-      <%~ include('./partials/task-row', { ...it, t }) %>
-    <% }) %>
+    <% planifiees.forEach((t) => { %><%~ include('./partials/task-row', { ...it, t }) %><% }) %>
   </tbody>
 </table>
 </div>
+<% } %>
+<% if (oneshots.length) { %>
+<div class="titre-section" style="margin-top:2.5rem"><h2>Oneshots</h2></div>
+<div class="defile">
+<table class="registre">
+  <thead>
+    <tr><th>Oneshot</th><th>Dernière réponse</th><th class="masque-mobile chiffre">Coût 30 j</th><th class="fin"></th></tr>
+  </thead>
+  <tbody>
+    <% oneshots.forEach((t) => { %><%~ include('./partials/oneshot-row', { ...it, t }) %><% }) %>
+  </tbody>
+</table>
+</div>
+<% } %>
+<% if (it.tasks.length) { %>
 <p class="petit discret">Le coût est un équivalent API indicatif. Avec un token d'abonnement, rien n'est facturé à part : c'est pris sur ton quota.</p>
 <% } %>
