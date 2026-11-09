@@ -19,7 +19,6 @@ import {
 } from './auth.js';
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
-import { TEMPLATES, templateTask } from './examples.js';
 import { ASK_TOOLS, createAsks } from './asks.js';
 import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
@@ -247,7 +246,6 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.view('tasks', {
       tasks,
       tokenStatus: claudeAuth.status(),
-      templates: TEMPLATES,
       dial: buildDial({ tasks, recentRuns, timezone: config.timezone }),
       asks: asks.recent(),
       askBusy: asks.busy || req.query.busy === '1',
@@ -284,11 +282,11 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     next();
   };
 
-  app.get('/asks/:id', loadAsk, (req, res) => res.view('ask', { ask: req.ask, busy: asks.busy }));
+  app.get('/asks/:id', loadAsk, (req, res) => res.view('ask', { ask: req.ask, busy: asks.busy, live: asks.live(req.ask.id) }));
 
   app.get('/asks/:id/status', loadAsk, (req, res) => {
     if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
-    res.view('partials/ask-running', { ask: req.ask });
+    res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id) });
   });
 
   app.post('/asks/:id/reply', loadAsk, (req, res) => {
@@ -303,8 +301,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   // « En faire une ronde » : conception guidée à partir de la demande et de la réponse.
   app.post('/asks/:id/to-ronde', loadAsk, (req, res) => {
     const a = req.ask;
-    const history = a.result ? [{ role: 'user', text: a.title }, { role: 'claude', text: a.result.slice(0, 4000) }] : [];
-    const text = a.result ? 'Fais-en une ronde.' : a.title;
+    const history = a.messages.map((m) => ({ role: m.role, text: m.text.slice(0, 4000) }));
+    const text = 'Fais-en une ronde.';
     const started = asks.start('design', text, mcpAllowedTools(store), { title: a.title, history });
     if (!started) return res.status(409).view('ask', { ask: a, busy: true, error: 'Une demande est déjà en cours.' });
     res.redirect(`/asks/${started.id}`);
@@ -325,12 +323,6 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/tasks/${id}`);
   });
 
-  app.post('/tasks/template/:key', (req, res) => {
-    const task = templateTask(req.params.key);
-    if (!task) return res.status(404).view('error', { message: 'Modèle introuvable.' });
-    const id = store.createTask(task);
-    res.redirect(`/tasks/${id}`);
-  });
 
   app.get('/cron-preview', (req, res) => {
     const expr = String(req.query.cron ?? '').trim();

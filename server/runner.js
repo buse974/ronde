@@ -13,9 +13,10 @@ export function toolName(rule) {
  *  --tools        : restreint les outils disponibles (vide = aucun)
  *  --allowedTools : autorise ces règles sans demande de permission
  */
-export function buildArgs({ allowedTools = [], maxTurns }) {
+export function buildArgs({ allowedTools = [], maxTurns, stream = false }) {
   const tools = [...new Set(allowedTools.map(toolName))];
-  const args = ['-p', '--output-format', 'json', '--max-turns', String(maxTurns), '--no-session-persistence'];
+  const format = stream ? ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'] : ['--output-format', 'json'];
+  const args = ['-p', ...format, '--max-turns', String(maxTurns), '--no-session-persistence'];
   args.push('--tools', tools.length ? tools.join(',') : '');
   if (allowedTools.length) args.push('--allowedTools', ...allowedTools);
   return args;
@@ -143,10 +144,16 @@ function capped(limit) {
  * Lance claude et attend sa fin. Ne lève jamais : les erreurs sont dans le résultat.
  * @returns {Promise<{exitCode, stdout, stderr, timedOut, spawnError, durationMs}>}
  */
-export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone }) {
+/**
+ * onEvent : si fourni, claude tourne en stream-json et chaque événement (objet
+ * JSON) est transmis au fil de l'eau ; stdout contient alors le seul événement
+ * final « result », ce qui garde le reste du code identique.
+ */
+export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone, onEvent }) {
   const r = config.runner;
   const started = Date.now();
-  const args = buildArgs({ allowedTools, maxTurns });
+  const stream = typeof onEvent === 'function';
+  const args = buildArgs({ allowedTools, maxTurns, stream });
   const options = {
     cwd: r.cwd || undefined,
     env: buildEnv({ auth, home: r.home, timezone, path: r.path }),
@@ -160,6 +167,23 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
 
   return new Promise((resolve) => {
     const stdout = capped(r.maxStdoutBytes);
+    let pending = '';
+    let finalEvent = null;
+    const onLine = (line) => {
+      if (!line.trim()) return;
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return;
+      }
+      if (event.type === 'result') finalEvent = line;
+      try {
+        onEvent(event);
+      } catch {
+        /* un affichage en direct ne doit jamais casser le run */
+      }
+    };
     const stderr = capped(r.maxStderrBytes);
     let timedOut = false;
     let spawnError = null;
@@ -174,7 +198,7 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
       clearTimeout(killTimer);
       resolve({
         exitCode,
-        stdout: stdout.truncated ? '' : stdout.toString(), // JSON tronqué = inexploitable
+        stdout: stream ? (finalEvent ?? '') : stdout.truncated ? '' : stdout.toString(), // JSON tronqué = inexploitable
         stderr: stderr.toString() + (stdout.truncated ? '\n[sortie standard trop volumineuse, ignorée]' : ''),
         timedOut,
         spawnError,
@@ -206,7 +230,19 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
       }, r.killGraceMs);
     }, timeoutSec * 1000);
 
-    child.stdout.on('data', (c) => stdout.push(c));
+    child.stdout.on('data', (c) => {
+      if (!stream) return stdout.push(c);
+      pending += c.toString('utf8');
+      let nl;
+      while ((nl = pending.indexOf('\n')) >= 0) {
+        onLine(pending.slice(0, nl));
+        pending = pending.slice(nl + 1);
+      }
+      if (pending.length > r.maxStdoutBytes) pending = ''; // ligne démesurée : ignorée
+    });
+    child.stdout.on('end', () => {
+      if (stream && pending) onLine(pending);
+    });
     child.stderr.on('data', (c) => stderr.push(c));
     child.on('error', (err) => {
       spawnError = err.message;

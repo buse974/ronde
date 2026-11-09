@@ -78,6 +78,33 @@ describe('Demander à Claude', () => {
     expect(asks.get(Number(tryRes.headers.location.split('/').pop()))).toMatchObject({ kind: 'exec', status: 'done', title: 'Essai : Sécurité SSH' });
   });
 
+  it('montre Claude en direct puis continue la conversation', async () => {
+    const { agent, asks } = await admin();
+    const res = await form(agent, '/asks', { prompt: 'espace disque ? MODE:slow' });
+    const id = Number(res.headers.location.split('/').pop());
+    // Pendant le run : l'étape et le texte partiel sont visibles.
+    let live = null;
+    for (let i = 0; i < 40 && !live?.text; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      live = asks.live(id);
+    }
+    expect(live.steps).toEqual(['Lecture de /host-metrics/metrics.txt']);
+    expect(live.text).toBe('Réponse lente.');
+    const status = await agent.get(`/asks/${id}/status`).set('Host', HOST);
+    expect(status.text).toContain('Lecture de /host-metrics/metrics.txt');
+    await asks.drain();
+    expect(asks.live(id)).toBeNull();
+    expect((await agent.get(`/asks/${id}/status`).set('Host', HOST)).headers['hx-refresh']).toBe('true');
+
+    // Suite de la conversation.
+    await form(agent, `/asks/${id}/reply`, { text: 'et sur /boot ? MODE:plain' });
+    await asks.drain();
+    const ask = asks.get(id);
+    expect(ask.messages.map((m) => m.role)).toEqual(['user', 'claude', 'user', 'claude']);
+    expect(ask.messages.at(-1).text).toBe('Paris.');
+    expect(ask.result).toBe('Paris.');
+  }, 10_000);
+
   it('une seule demande à la fois', async () => {
     const { agent, asks } = await admin();
     await form(agent, '/asks', { prompt: 'MODE:ok' });

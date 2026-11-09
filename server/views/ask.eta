@@ -1,67 +1,50 @@
 <% layout('./layout', { ...it, title: it.ask.kind === 'design' ? 'Créer une ronde avec Claude' : 'Demande' }) %>
 <% const a = it.ask, h = it.h; %>
 <p class="petit"><a href="/tasks#demander">Toutes les rondes</a></p>
+<h1><%= a.kind === 'design' ? 'Créer une ronde avec Claude' : 'Demande' %></h1>
+<% if (it.error) { %><p class="note attention"><%= it.error %></p><% } %>
 
-<% if (a.kind === 'exec') { %>
-  <h1>Demande</h1>
-  <div class="bulle moi"><div><%= a.title %></div></div>
-  <% if (a.status === 'running') { %>
-    <%~ include('./partials/ask-running', it) %>
-  <% } else { %>
-    <div class="verdict petit-verdict"><%~ include('./partials/ask-status', { ...it, a }) %></div>
-    <% if (a.error) { %><p class="note mal"><%= a.error %></p><% } %>
-    <% if (a.result) { %><div class="reponse <%= a.status === 'failed' ? 'failed' : a.is_ras ? 'ok' : '' %>"><%= a.result %></div><% } %>
-    <% if (a.suggest_ronde) { %>
-    <div class="suggestion">
-      <p>Ça pourrait devenir une ronde : Claude referait cette vérification régulièrement et ne te préviendrait qu'en cas de problème. On la crée ?</p>
-      <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Oui, créer une ronde</button></form>
+<div class="conversation">
+  <% a.messages.forEach((m, i) => { %>
+    <div class="bulle <%= m.role === 'user' ? 'moi' : 'claude' %><%= m.role === 'claude' && a.kind === 'exec' && a.is_ras && i === a.messages.length - 1 ? ' ras' : '' %>">
+      <span class="qui"><%= m.role === 'user' ? 'Toi' : 'Claude' %></span>
+      <div><%= m.text %></div>
     </div>
-    <% } %>
-    <p class="petit discret">Coût estimé <%= h.cost(a.cost_usd) %>.</p>
-    <div class="actions">
-      <a href="/tasks#demander" class="bouton secondaire">Nouvelle demande</a>
-    </div>
-  <% } %>
+  <% }) %>
+  <% if (a.status === 'running') { %><%~ include('./partials/ask-running', it) %><% } %>
+</div>
 
-<% } else { %>
-  <h1>Créer une ronde avec Claude</h1>
-  <% if (it.error) { %><p class="note attention"><%= it.error %></p><% } %>
-  <div class="conversation">
-    <% a.messages.forEach((m) => { %>
-      <div class="bulle <%= m.role === 'user' ? 'moi' : 'claude' %>">
-        <span class="qui"><%= m.role === 'user' ? 'Toi' : 'Claude' %></span>
-        <div><%= m.text %></div>
-      </div>
-    <% }) %>
-  </div>
-
-  <% if (a.status === 'running') { %>
-    <%~ include('./partials/ask-running', it) %>
-  <% } else if (a.status === 'failed') { %>
-    <p class="note mal"><%= a.error %></p>
-  <% } %>
-
-  <% if (a.proposal && a.status !== 'running') { const p = a.proposal; %>
-  <article class="proposition">
-    <h2><%= p.name || 'Ronde proposée' %></h2>
-    <p><%= p.cron ? h.cronText(p.cron) : 'Ronde manuelle' %><% if (p.cron) { %> <span class="discret">(<code><%= p.cron %></code>)</span><% } %>. Outils : <%= (p.allowed_tools || []).join(', ') || 'aucun' %>. Tours maximum : <%= p.max_turns %>.</p>
-    <% if (p.error) { %><p class="note attention">À corriger avant de créer : <%= p.error %></p><% } %>
-    <details><summary>Prompt de la ronde</summary><pre><%= p.prompt %></pre></details>
-    <div class="actions" style="margin-top:1rem">
-      <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer maintenant</button></form>
-      <a href="/tasks/new?from_ask=<%= a.id %>" class="bouton">Ouvrir dans le formulaire</a>
-    </div>
-    <p class="aide">« Essayer » lance la ronde une fois sans l'enregistrer. Le formulaire te laisse relire et ajuster avant de créer.</p>
-  </article>
-  <% } %>
-
-  <% if (a.status !== 'running') { %>
-  <form method="post" action="/asks/<%= a.id %>/reply" class="repondre">
-    <label for="reply">Ta réponse
-      <textarea id="reply" name="text" rows="3" required placeholder="<%= a.status === 'proposal' ? 'Demande un ajustement, par exemple : plutôt toutes les 30 minutes.' : 'Réponds aux questions de Claude.' %>"></textarea>
-    </label>
-    <button type="submit" <%= it.busy ? 'disabled' : '' %>>Envoyer</button>
-  </form>
-  <% } %>
-  <p class="petit discret">Coût estimé de la conversation : <%= h.cost(a.cost_usd) %>.</p>
+<% if (a.status === 'failed') { %>
+  <p class="note mal"><%= a.error %></p>
+  <% if (a.result) { %><details><summary>Détail</summary><pre><%= a.result %></pre></details><% } %>
 <% } %>
+
+<% if (a.kind === 'exec' && a.suggest_ronde && a.status === 'done') { %>
+<div class="suggestion">
+  <p>Ça pourrait devenir une ronde : Claude referait cette vérification régulièrement et ne te préviendrait qu'en cas de problème. On la crée ?</p>
+  <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Oui, créer une ronde</button></form>
+</div>
+<% } %>
+
+<% if (a.kind === 'design' && a.proposal && a.status !== 'running') { const p = a.proposal; %>
+<article class="proposition">
+  <h2><%= p.name || 'Ronde proposée' %></h2>
+  <p><%= p.cron ? h.cronText(p.cron) : 'Ronde manuelle' %><% if (p.cron) { %> <span class="discret">(<code><%= p.cron %></code>)</span><% } %>. Outils : <%= (p.allowed_tools || []).join(', ') || 'aucun' %>. Tours maximum : <%= p.max_turns %>.</p>
+  <% if (p.error) { %><p class="note attention">À corriger avant de créer : <%= p.error %></p><% } %>
+  <details><summary>Prompt de la ronde</summary><pre><%= p.prompt %></pre></details>
+  <div class="actions" style="margin-top:1rem">
+    <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer maintenant</button></form>
+    <a href="/tasks/new?from_ask=<%= a.id %>" class="bouton">Ouvrir dans le formulaire</a>
+  </div>
+  <p class="aide">« Essayer » lance la ronde une fois sans l'enregistrer. Le formulaire te laisse relire et ajuster avant de créer.</p>
+</article>
+<% } %>
+
+<% if (a.status !== 'running') { %>
+<form method="post" action="/asks/<%= a.id %>/reply" class="repondre demander-form">
+  <label for="reply" class="masque">Continuer la conversation</label>
+  <textarea id="reply" name="text" rows="2" required placeholder="<%= a.kind === 'design' ? (a.status === 'proposal' ? 'Un ajustement ? Par exemple : plutôt toutes les 30 minutes.' : 'Réponds à Claude.') : 'Continuer, par exemple : et sur /boot ?' %>"></textarea>
+  <button type="submit" <%= it.busy ? 'disabled' : '' %>>Envoyer</button>
+</form>
+<% } %>
+<p class="petit discret">Coût estimé de la conversation : <%= h.cost(a.cost_usd) %>.</p>

@@ -1,3 +1,13 @@
-<div hx-get="/asks/<%= it.ask.id %>/status" hx-trigger="every 2s" hx-swap="outerHTML">
-  <p class="discret"><span class="etat running">Claude réfléchit</span> La page se met à jour dès qu'il a fini.</p>
+<% const l = it.live || { steps: [], text: '' }; %>
+<div class="en-direct" hx-get="/asks/<%= it.ask.id %>/status" hx-trigger="every 1s" hx-swap="outerHTML" aria-live="polite">
+  <div class="bulle claude">
+    <span class="qui">Claude</span>
+    <% if (l.steps.length) { %>
+    <ul class="etapes-direct">
+      <% l.steps.forEach((s, i) => { %><li class="<%= i === l.steps.length - 1 && !l.text ? 'active' : '' %>"><%= s %></li><% }) %>
+    </ul>
+    <% } %>
+    <% if (l.text) { %><div><%= l.text %><span class="curseur" aria-hidden="true"></span></div>
+    <% } else if (!l.steps.length) { %><p class="discret attente">Claude réfléchit…</p><% } %>
+  </div>
 </div>

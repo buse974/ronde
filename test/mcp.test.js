@@ -196,20 +196,6 @@ describe('outils MCP', () => {
   });
 });
 
-describe('modèles dans l’UI', () => {
-  it('crée une tâche depuis chaque modèle', async () => {
-    const { app, store } = await installedApp();
-    const admin = request.agent(app);
-    await form(admin, '/login', { username: 'admin', password: PASSWORD });
-    const page = await admin.get('/tasks').set('Host', HOST);
-    expect(page.text).toContain('Sécurité SSH et fail2ban');
-    const res = await form(admin, '/tasks/template/fail2ban', {});
-    const id = Number(res.headers.location.split('/').pop());
-    expect(store.getTask(id)).toMatchObject({ name: 'Sécurité SSH et fail2ban', created_via: 'template', allowed_tools: ['Read'] });
-    expect((await form(admin, '/tasks/template/nope', {})).status).toBe(404);
-  });
-});
-
 describe('durcissements', () => {
   it('une ronde avec des outils hors politique est verrouillée pour MCP', async () => {
     const { app, store } = await installedApp();

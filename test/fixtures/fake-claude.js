@@ -5,7 +5,21 @@ process.stdin.on('data', (c) => (input += c));
 process.stdin.on('end', () => {
   const mode = [...input.matchAll(/MODE:(\w+)/g)].at(-1)?.[1] || 'ok';
   const usage = { input_tokens: 10, cache_creation_input_tokens: 100, cache_read_input_tokens: 1000, output_tokens: 5 };
-  const out = (o) => process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 's1', total_cost_usd: 0.0123, usage, ...o }));
+  const stream = process.argv.includes('stream-json');
+  const line = (o) => process.stdout.write(JSON.stringify(o) + '\n');
+  const final = (o) => ({ type: 'result', subtype: 'success', is_error: false, num_turns: 1, session_id: 's1', total_cost_usd: 0.0123, usage, ...o });
+  // En stream-json : init, un appel d'outil, le texte en morceaux, puis le résultat.
+  const out = (o, delay = 0) => {
+    const r = final(o);
+    if (!stream) return process.stdout.write(JSON.stringify(r));
+    line({ type: 'system', subtype: 'init' });
+    line({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/host-metrics/metrics.txt' } }] } });
+    line({ type: 'stream_event', event: { type: 'message_start' } });
+    const text = String(r.result ?? '');
+    const half = Math.ceil(text.length / 2);
+    for (const part of [text.slice(0, half), text.slice(half)]) line({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: part } } });
+    setTimeout(() => line(r), delay);
+  };
   switch (mode) {
     case 'ok': return out({ result: 'RAS' });
     case 'alert': return out({ result: 'Disque / à 92 %' });
@@ -14,6 +28,7 @@ process.stdin.on('end', () => {
     case 'exit': out({ result: 'RAS' }); process.exitCode = 2; return;
     case 'garbage': return process.stdout.write('pas du json');
     case 'env': return out({ result: JSON.stringify({ keys: Object.keys(process.env).sort(), args: process.argv.slice(2) }) });
+    case 'slow': return out({ result: 'Réponse lente.' }, 1500);
     case 'suggest': return out({ result: 'Il reste 36 Go libres sur 74 Go (47 %).\n\n```json\n{"ronde": true}\n```' });
     case 'plain': return out({ result: 'Paris.\n\n```json\n{"ronde": false}\n```' });
     case 'designq': return out({ result: 'Je vois 34 IP bannies. À partir de quel pic veux-tu une alerte ?\n\n```json\n{"type": "question"}\n```' });
