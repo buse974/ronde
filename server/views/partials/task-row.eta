@@ -1,25 +1,27 @@
 <% const t = it.t, h = it.h; %>
-<tr id="task-<%= t.id %>" class="<%= t.active || !t.cron ? '' : 'inactive' %>">
-  <td><a href="/tasks/<%= t.id %>"><strong><%= t.name %></strong></a><% if (t.created_via === 'mcp') { %> <small class="badge" title="Créée via MCP">MCP</small><% } %></td>
-  <td><% if (t.cron) { %><span title="<%= t.cron %>"><%= h.cronText(t.cron) %></span><% } else { %><span class="badge">Manuelle</span><% } %></td>
-  <td><%= t.cron && t.active ? h.nextRun(t.cron) : '—' %></td>
+<tr id="task-<%= t.id %>" class="<%= t.cron && !t.active ? 'endormie' : '' %>">
+  <td class="nom">
+    <a href="/tasks/<%= t.id %>"><%= t.name %></a>
+    <% if (t.created_via === 'mcp') { %> <span class="pastille" title="Créée par Claude via MCP">MCP</span><% } %>
+  </td>
+  <td class="masque-mobile"><% if (t.cron) { %><span title="<%= t.cron %>"><%= h.cronText(t.cron) %></span><% } else { %><span class="pastille">Manuelle</span><% } %></td>
+  <td class="masque-mobile quand"><%= t.cron && t.active ? h.nextRun(t.cron) : '—' %></td>
   <td>
     <% if (t.last_run_id) { %>
-      <a href="/runs/<%= t.last_run_id %>"><span class="badge <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></span></a>
-      <small class="muted"><%= h.short(t.last_started_at) %></small>
-    <% } else { %>—<% } %>
+      <a href="/runs/<%= t.last_run_id %>" class="etat <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></a>
+      <span class="quand petit"><%= h.ago(t.last_started_at) %></span>
+      <% if (t.last_excerpt && t.last_status !== 'ok') { %><div class="extrait petit"><%= t.last_excerpt %></div><% } %>
+    <% } else { %><span class="etat aucun">Jamais lancée</span><% } %>
   </td>
-  <td><%= h.cost(t.cost_30d) %></td>
-  <td>
+  <td class="masque-mobile chiffre"><%= h.cost(t.cost_30d) %></td>
+  <td class="fin">
+    <form method="post" action="/tasks/<%= t.id %>/run" class="en-ligne">
+      <button type="submit" class="secondaire compact">Lancer</button>
+    </form>
     <% if (t.cron) { %>
-    <form method="post" action="/tasks/<%= t.id %>/toggle" hx-post="/tasks/<%= t.id %>/toggle" hx-trigger="change" hx-target="#task-<%= t.id %>" hx-swap="outerHTML" class="inline">
-      <input type="checkbox" role="switch" <%= t.active ? 'checked' : '' %> aria-label="Active">
+    <form method="post" action="/tasks/<%= t.id %>/toggle" hx-post="/tasks/<%= t.id %>/toggle" hx-trigger="change" hx-target="#task-<%= t.id %>" hx-swap="outerHTML" class="en-ligne">
+      <input type="checkbox" class="interrupteur" <%= t.active ? 'checked' : '' %> aria-label="Ronde active">
     </form>
-    <% } else { %>—<% } %>
-  </td>
-  <td>
-    <form method="post" action="/tasks/<%= t.id %>/run" class="inline">
-      <button type="submit" class="outline small">Lancer</button>
-    </form>
+    <% } %>
   </td>
 </tr>

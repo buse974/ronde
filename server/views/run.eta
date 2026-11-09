@@ -1,36 +1,30 @@
-<% layout('./layout', { ...it, title: 'Run #' + it.run.id }) %>
+<% layout('./layout', { ...it, title: 'Passage du ' + it.h.short(it.run.started_at) }) %>
 <% const r = it.run, h = it.h; %>
-<p><a href="/tasks/<%= r.task_id %>">← <%= r.task_name %></a></p>
-<h2>Run #<%= r.id %> <span class="badge <%= r.status %>"><%= h.statusLabel(r.status) %></span></h2>
+<p class="petit"><a href="/tasks/<%= r.task_id %>"><%= r.task_name %></a></p>
 
 <% if (r.status === 'running') { %>
+  <div class="verdict"><span class="etat running">En cours</span></div>
   <%~ include('./partials/run-running', it) %>
 <% } else { %>
-<div class="grid">
-  <div>
-    <p><strong>Début :</strong> <%= h.date(r.started_at) %><br>
-       <strong>Fin :</strong> <%= h.date(r.finished_at) %><br>
-       <strong>Durée :</strong> <%= h.duration(r.duration_ms) %><br>
-       <strong>Déclencheur :</strong> <%= r.trigger === 'manual' ? 'Manuel' : 'Planifié' %></p>
-  </div>
-  <div>
-    <p><strong>Code de sortie :</strong> <%= r.exit_code ?? '—' %> · <strong>is_error :</strong> <%= r.is_error == null ? '—' : r.is_error ? 'true' : 'false' %><br>
-       <strong>Tours :</strong> <%= r.num_turns ?? '—' %><br>
-       <strong>Tokens :</strong> <%= h.tokens(r.input_tokens) %> entrée + <%= h.tokens(r.cache_read_tokens) %> cache lu + <%= h.tokens(r.cache_creation_tokens) %> cache écrit · <%= h.tokens(r.output_tokens) %> sortie<br>
-       <strong>Coût estimé :</strong> <%= h.cost(r.cost_usd) %> <small class="muted">(équivalent API<%= r.token_type === 'oauth' ? ', pris sur le quota de l’abonnement' : r.token_type === 'api' ? ', facturé sur la clé API' : '' %>)</small><br>
-       <strong>Alerte mail :</strong> <%= r.alert_sent ? 'envoyée' : (r.status === 'ok' ? 'non nécessaire' : 'non envoyée') %></p>
-  </div>
+<div class="verdict">
+  <span class="etat <%= r.status %>"><%= h.statusLabel(r.status) %></span>
+  <span class="discret"><%= h.date(r.started_at) %>, <%= r.trigger === 'manual' ? 'à la demande' : 'planifié' %></span>
 </div>
 
-<% if (r.error) { %><p class="notice error-box"><%= r.error %></p><% } %>
+<% if (r.error) { %><p class="note mal"><%= r.error %></p><% } %>
 
 <h3>Réponse de Claude</h3>
-<pre><%= r.result ?? '(aucune)' %></pre>
+<div class="reponse <%= r.status %>"><%= r.result ?? '(aucune réponse)' %></div>
 
-<% if (r.stderr) { %>
-<details><summary>stderr</summary><pre><%= r.stderr %></pre></details>
-<% } %>
-<% if (it.pretty) { %>
-<details><summary>JSON brut</summary><pre><%= it.pretty %></pre></details>
-<% } %>
+<dl class="fiche">
+  <dt>Durée</dt><dd><%= h.duration(r.duration_ms) %></dd>
+  <dt>Code de sortie</dt><dd><%= r.exit_code ?? '—' %>, is_error <%= r.is_error == null ? '—' : r.is_error ? 'true' : 'false' %></dd>
+  <dt>Tours</dt><dd><%= r.num_turns ?? '—' %></dd>
+  <dt>Tokens</dt><dd><%= h.tokens(r.input_tokens) %> en entrée, <%= h.tokens(r.cache_read_tokens) %> lus en cache, <%= h.tokens(r.cache_creation_tokens) %> écrits en cache, <%= h.tokens(r.output_tokens) %> en sortie</dd>
+  <dt>Coût estimé</dt><dd><%= h.cost(r.cost_usd) %> <span class="discret">(équivalent API<%= r.token_type === 'oauth' ? ', pris sur le quota de l’abonnement' : r.token_type === 'api' ? ', facturé sur la clé API' : '' %>)</span></dd>
+  <dt>Mail d'alerte</dt><dd><%= r.alert_sent ? 'envoyé' : (r.status === 'ok' ? 'inutile' : 'non envoyé') %></dd>
+</dl>
+
+<% if (r.stderr) { %><details><summary>Sortie d'erreur</summary><pre><%= r.stderr %></pre></details><% } %>
+<% if (it.pretty) { %><details><summary>JSON brut</summary><pre><%= it.pretty %></pre></details><% } %>
 <% } %>

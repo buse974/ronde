@@ -1,32 +1,29 @@
 <!DOCTYPE html>
-<html lang="fr" data-theme="light">
+<html lang="fr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title><%= it.title ? it.title + ' · ronde' : 'ronde' %></title>
-  <link rel="stylesheet" href="/vendor/pico.min.css">
+  <meta name="theme-color" content="#151b2e">
+  <title><%= it.title ? it.title + ' – ronde' : 'ronde' %></title>
+  <link rel="preload" href="/vendor/fonts/archivo-wdth.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/app.css">
   <script src="/vendor/htmx.min.js" defer></script>
 </head>
 <body>
-  <header class="container">
-    <nav>
-      <ul><li><a href="/" class="brand">ronde</a></li></ul>
+  <div class="page">
+    <header class="entete">
+      <a href="/" class="marque"><%~ include('./partials/embleme', {}) %>ronde</a>
       <% if (it.user) { %>
-      <ul>
-        <li><a href="/tasks" <%~ it.path.startsWith('/tasks') || it.path.startsWith('/runs') ? 'aria-current="page"' : '' %>>Tâches</a></li>
-        <li><a href="/settings" <%~ it.path.startsWith('/settings') ? 'aria-current="page"' : '' %>>Réglages</a></li>
-        <li>
-          <form method="post" action="/logout" class="inline">
-            <button type="submit" class="secondary outline small">Déconnexion</button>
-          </form>
-        </li>
-      </ul>
+      <nav class="nav" aria-label="Navigation principale">
+        <a href="/tasks" <%~ it.path.startsWith('/tasks') || it.path.startsWith('/runs') ? 'aria-current="page"' : '' %>>Rondes</a>
+        <a href="/settings" <%~ it.path.startsWith('/settings') ? 'aria-current="page"' : '' %>>Réglages</a>
+        <form method="post" action="/logout"><button type="submit" class="lien">Se déconnecter</button></form>
+      </nav>
       <% } %>
-    </nav>
-  </header>
-  <main class="container">
-    <%~ it.body %>
-  </main>
+    </header>
+    <main>
+      <%~ it.body %>
+    </main>
+  </div>
 </body>
 </html>

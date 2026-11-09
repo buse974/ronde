@@ -22,7 +22,7 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import { TEMPLATES, templateTask } from './examples.js';
 import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
-import { createHelpers } from './helpers.js';
+import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
 import { classify, runClaude } from './runner.js';
 import { nextRuns, cronError } from './scheduler.js';
 import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema } from './validation.js';
@@ -238,7 +238,15 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.get('/', (req, res) => res.redirect('/tasks'));
 
   app.get('/tasks', (req, res) => {
-    res.view('tasks', { tasks: store.listTasks(), tokenStatus: claudeAuth.status(), templates: TEMPLATES });
+    const tasks = store.listTasks();
+    const recentRuns = store.runsSince(24);
+    res.view('tasks', {
+      tasks,
+      tokenStatus: claudeAuth.status(),
+      templates: TEMPLATES,
+      dial: buildDial({ tasks, recentRuns, timezone: config.timezone }),
+      summary: summarize({ tasks, recentRuns, timezone: config.timezone }),
+    });
   });
 
   app.get('/tasks/new', (req, res) => {
@@ -281,8 +289,9 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     const total = store.countRuns(req.task.id);
     res.view('task', {
       task: req.task,
-      runs: store.listRuns(req.task.id, PAGE_SIZE, (page - 1) * PAGE_SIZE),
+      runs: groupRuns(store.listRuns(req.task.id, PAGE_SIZE, (page - 1) * PAGE_SIZE)),
       stats: store.taskStats(req.task.id),
+      strip: buildStrip(store.runsForDays(req.task.id, 30), config.timezone),
       page,
       pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
       started: req.query.started,
