@@ -259,7 +259,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       task: null,
       values: proposal
         ? { ...proposal, active: true, notify: true, trigger: proposal.cron ? 'cron' : 'oneshot' }
-        : { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 600, active: true, notify: true, trigger: 'cron' },
+        : { name: '', prompt: '', cron: '0 * * * *', allowed_tools: [], max_turns: 5, timeout_sec: 300, active: true, notify: true, trigger: 'cron' },
       errors: {},
       fromAsk: proposal ? Number(req.query.from_ask) : null,
     });
@@ -287,6 +287,11 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.get('/asks/:id/status', loadAsk, (req, res) => {
     if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
     res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id) });
+  });
+
+  app.post('/asks/:id/stop', loadAsk, (req, res) => {
+    asks.stop(req.ask.id);
+    res.redirect(`/asks/${req.ask.id}`);
   });
 
   app.post('/asks/:id/reply', loadAsk, (req, res) => {
@@ -411,6 +416,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     let pretty = null;
     if (run.raw_json) pretty = JSON.stringify(JSON.parse(run.raw_json), null, 2);
     res.view('run', { run, pretty });
+  });
+
+  // Bouton « Arrêter » : coupe claude et tout ce qu'il a lancé.
+  app.post('/runs/:id/stop', (req, res) => {
+    executor.stop(Number(req.params.id));
+    res.redirect(`/runs/${Number(req.params.id)}`);
   });
 
   // Rafraîchissement htmx tant que le run tourne ; recharge la page quand il est fini.

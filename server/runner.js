@@ -63,14 +63,15 @@ export function parseOutput(stdout) {
  * ainsi que si la sortie n'est pas un JSON exploitable ou si le run a expiré.
  * Sinon « ok » si Claude répond RAS, « alert » dans tous les autres cas.
  */
-export function classify({ exitCode, stdout, timedOut, spawnError }) {
+export function classify({ exitCode, stdout, timedOut, spawnError, stopped }) {
   const json = parseOutput(stdout);
   const usage = json?.usage ?? {};
   const result = typeof json?.result === 'string' ? json.result : null;
   const isError = json?.is_error === true;
 
   let error = null;
-  if (spawnError) error = `Impossible de lancer claude : ${spawnError}`;
+  if (stopped) error = 'Arrêté à la main.';
+  else if (spawnError) error = `Impossible de lancer claude : ${spawnError}`;
   else if (timedOut) error = 'Délai dépassé : le run a été interrompu.';
   else if (exitCode !== 0) error = `claude s'est terminé avec le code ${exitCode}.`;
   else if (!json) error = 'Sortie JSON illisible.';
@@ -149,7 +150,7 @@ function capped(limit) {
  * JSON) est transmis au fil de l'eau ; stdout contient alors le seul événement
  * final « result », ce qui garde le reste du code identique.
  */
-export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone, onEvent }) {
+export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone, onEvent, signal }) {
   const r = config.runner;
   const started = Date.now();
   const stream = typeof onEvent === 'function';
@@ -186,6 +187,7 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
     };
     const stderr = capped(r.maxStderrBytes);
     let timedOut = false;
+    let stopped = false;
     let spawnError = null;
     let timer = null;
     let killTimer = null;
@@ -201,6 +203,7 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
         stdout: stream ? (finalEvent ?? '') : stdout.truncated ? '' : stdout.toString(), // JSON tronqué = inexploitable
         stderr: stderr.toString() + (stdout.truncated ? '\n[sortie standard trop volumineuse, ignorée]' : ''),
         timedOut,
+        stopped,
         spawnError,
         durationMs: Date.now() - started,
       });
@@ -215,8 +218,8 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
     }
 
     active.add(child);
-    timer = setTimeout(() => {
-      timedOut = true;
+    /** Arrêt : SIGTERM au groupe, SIGKILL après le délai de grâce, puis fin forcée du run. */
+    const halt = () => {
       killGroup(child, 'SIGTERM');
       killTimer = setTimeout(() => {
         killGroup(child, 'SIGKILL');
@@ -228,7 +231,21 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
           finish(child.exitCode);
         }, 2000);
       }, r.killGraceMs);
+    };
+    timer = setTimeout(() => {
+      timedOut = true;
+      halt();
     }, timeoutSec * 1000);
+    if (signal) {
+      const onAbort = () => {
+        if (settled || stopped) return;
+        stopped = true;
+        clearTimeout(timer);
+        halt();
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     child.stdout.on('data', (c) => {
       if (!stream) return stdout.push(c);

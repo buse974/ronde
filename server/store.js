@@ -156,7 +156,9 @@ export function createStore(db) {
       stmt('UPDATE runs SET alert_sent = 1 WHERE id = ?').run(id);
     },
     getRun(id) {
-      return stmt('SELECT r.*, t.name AS task_name FROM runs r JOIN tasks t ON t.id = r.task_id WHERE r.id = ?').get(id) ?? null;
+      return (
+        stmt('SELECT r.*, t.name AS task_name, t.timeout_sec FROM runs r JOIN tasks t ON t.id = r.task_id WHERE r.id = ?').get(id) ?? null
+      );
     },
     listRuns(taskId, limit = 50, offset = 0) {
       return stmt('SELECT * FROM runs WHERE task_id = ? ORDER BY started_at DESC, id DESC LIMIT ? OFFSET ?').all(taskId, limit, offset);

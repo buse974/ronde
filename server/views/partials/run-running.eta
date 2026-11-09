@@ -1,3 +1,5 @@
-<div hx-get="/runs/<%= it.run.id %>/status" hx-trigger="every 3s" hx-swap="outerHTML">
-  <p class="discret">Claude fait sa ronde depuis <%= it.h.date(it.run.started_at) %>. La page se met à jour à la fin.</p>
+<% const r = it.run; const coupe = r.timeout_sec ? new Date(new Date(r.started_at).getTime() + r.timeout_sec * 1000).toISOString() : null; %>
+<div hx-get="/runs/<%= r.id %>/status" hx-trigger="every 3s" hx-swap="outerHTML" class="en-cours">
+  <p class="discret">Claude fait sa ronde depuis <%= it.h.ago(r.started_at).replace('il y a ', '') %>.<% if (coupe) { %> Coupé automatiquement à <%= it.h.short(coupe).split(' ').pop() %> s'il n'a pas fini (délai maximum <%= Math.round(r.timeout_sec / 60) %> min).<% } %></p>
+  <form method="post" action="/runs/<%= r.id %>/stop"><button type="submit" class="danger">Arrêter</button></form>
 </div>
