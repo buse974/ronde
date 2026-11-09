@@ -1,6 +1,6 @@
 <% layout('./layout', { ...it, title: 'Erreur' }) %>
-<article>
-  <h2>Oups</h2>
+<div class="seul">
+  <h1>Page indisponible</h1>
   <p><%= it.message %></p>
-  <a href="/">Retour</a>
-</article>
+  <a href="/" class="bouton secondaire">Retour aux rondes</a>
+</div>

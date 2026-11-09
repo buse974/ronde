@@ -1,99 +1,113 @@
 <% layout('./layout', { ...it, title: 'Réglages' }) %>
 <% const t = it.token, e = it.errors; %>
-<h2>Réglages</h2>
-<% if (it.notice) { %><p class="notice ok-box"><%= it.notice %></p><% } %>
+<h1>Réglages</h1>
+<% if (it.notice) { %><p class="note bien" role="status"><%= it.notice %></p><% } %>
 
-<article>
-  <header><strong>Token Claude</strong></header>
-  <% if (t.configured) { %>
-    <p>Configuré : <code><%= t.masked %></code> · <%= it.h.tokenTypeLabel(t.type) %>
-      <% if (t.source === 'env') { %><br><small class="muted">Défini par une variable d'environnement : il est prioritaire et ne peut pas être modifié ici.</small><% } %></p>
-    <% if (t.type === 'api') { %><p class="notice warn">Clé API : chaque run est facturé à l'usage sur la console Anthropic.</p><% } %>
-  <% } else if (t.unreadable) { %>
-    <p class="notice warn">Le token enregistré est illisible (le secret de l'application a changé). Colle-le à nouveau.</p>
-  <% } else { %>
-    <p class="notice warn">Aucun token : les runs échoueront.</p>
-  <% } %>
+<section class="reglage" aria-labelledby="r-token">
+  <div>
+    <h2 id="r-token">Token Claude</h2>
+    <p>La clé avec laquelle ronde lance Claude. Elle est chiffrée en base et n'est jamais réaffichée.</p>
+  </div>
+  <div>
+    <% if (t.configured) { %>
+      <p><span class="etat ok">Configuré</span> <code><%= t.masked %></code>, <%= it.h.tokenTypeLabel(t.type) %>.</p>
+      <% if (t.source === 'env') { %><p class="discret">Défini par une variable d'environnement du serveur : il est prioritaire et ne se modifie pas ici.</p><% } %>
+      <% if (t.type === 'api') { %><p class="note attention">Clé API : chaque passage est facturé à l'usage sur la console Anthropic.</p><% } %>
+    <% } else if (t.unreadable) { %>
+      <p class="note attention">Le token enregistré est illisible : le secret de l'application a changé. Colle-le à nouveau.</p>
+    <% } else { %>
+      <p class="note attention">Aucun token : les rondes échoueront tant qu'il manque.</p>
+    <% } %>
 
-  <% if (t.source !== 'env') { %>
-  <form method="post" action="/settings/token">
-    <label><%= t.configured ? 'Remplacer le token' : 'Coller le token' %>
-      <input type="password" name="claude_token" autocomplete="off" placeholder="sk-ant-oat…" required <%~ e.claude_token ? 'aria-invalid="true"' : '' %>>
-      <small class="<%= e.claude_token ? 'error' : '' %>"><%= e.claude_token ?? 'Recommandé : « claude setup-token » sur ta machine (abonnement Pro/Max, pas de facturation à part). Le token est chiffré en base.' %></small>
-    </label>
-    <button type="submit">Enregistrer</button>
-  </form>
-  <% } %>
-
-  <% if (t.configured) { %>
-  <footer class="actions">
-    <form method="post" action="/settings/token/test" hx-post="/settings/token/test" hx-target="#token-test" hx-indicator="#token-test-btn" class="inline">
-      <button type="submit" id="token-test-btn" class="secondary">Tester</button>
-    </form>
-    <% if (t.source === 'db') { %>
-    <form method="post" action="/settings/token/delete" class="inline">
-      <button type="submit" class="secondary outline">Supprimer</button>
+    <% if (t.source !== 'env') { %>
+    <form method="post" action="/settings/token">
+      <label><%= t.configured ? 'Remplacer le token' : 'Coller le token' %>
+        <input type="password" name="claude_token" autocomplete="off" placeholder="sk-ant-oat…" required <%~ e.claude_token ? 'aria-invalid="true"' : '' %>>
+        <small class="<%= e.claude_token ? 'erreur' : '' %>"><%= e.claude_token ?? 'Recommandé : « claude setup-token » sur ta machine. Il utilise ton abonnement Pro ou Max, sans facturation à part.' %></small>
+      </label>
+      <button type="submit">Enregistrer le token</button>
     </form>
     <% } %>
-    <div id="token-test"></div>
-  </footer>
-  <% } %>
-</article>
 
-<article>
-  <header><strong>Accès MCP</strong></header>
+    <% if (t.configured) { %>
+    <div class="actions" style="margin-top:1rem">
+      <form method="post" action="/settings/token/test" hx-post="/settings/token/test" hx-target="#token-test"><button type="submit" class="secondaire">Tester le token</button></form>
+      <% if (t.source === 'db') { %>
+      <form method="post" action="/settings/token/delete"><button type="submit" class="danger">Supprimer le token</button></form>
+      <% } %>
+    </div>
+    <div id="token-test" style="margin-top:1rem" aria-live="polite"></div>
+    <% } %>
+  </div>
+</section>
+
+<section class="reglage" aria-labelledby="r-mcp">
+  <div>
+    <h2 id="r-mcp">Accès MCP</h2>
+    <p>Laisse Claude concevoir, essayer et créer des rondes avec toi, depuis Claude Code ou claude.ai.</p>
+  </div>
+  <div>
   <% if (!it.mcp.enabled) { %>
-    <p class="notice warn">MCP désactivé : l'authentification OAuth exige une URL publique en HTTPS (variable <code>PUBLIC_URL</code>).</p>
+    <p class="note attention">Indisponible : la connexion MCP exige une adresse publique en HTTPS (variable <code>PUBLIC_URL</code>).</p>
   <% } else { %>
-    <p>Permet à Claude (Claude Code, claude.ai) de concevoir, essayer et créer des rondes avec toi. Connexion avec ton identifiant et ton mot de passe ronde : aucun token à copier.</p>
     <p>Dans ton terminal :</p>
-    <pre>claude mcp add --scope user --transport http ronde <%= it.mcp.url %></pre>
-    <p class="muted">Puis, dans Claude Code : <code>/mcp</code> → ronde → s'authentifier. Le navigateur s'ouvre sur ronde pour autoriser l'accès.</p>
+    <div class="commande"><pre>claude mcp add --scope user --transport http ronde <%= it.mcp.url %></pre></div>
+    <p class="discret">Puis dans Claude Code : <code>/mcp</code>, choisis ronde et connecte-toi. Le navigateur s'ouvre ici pour que tu autorises l'accès avec ton identifiant et ton mot de passe.</p>
 
-    <h4>Accès autorisés</h4>
+    <h3 style="margin-top:1.75rem">Accès autorisés</h3>
     <% if (!it.grants.length) { %>
-      <p class="muted">Aucun pour l'instant.</p>
+      <p class="discret">Aucun pour l'instant.</p>
     <% } else { %>
-    <table>
-      <thead><tr><th>Client</th><th>Autorisé le</th><th>Dernière utilisation</th><th></th></tr></thead>
+    <div class="defile">
+    <table class="registre">
+      <thead><tr><th>Client</th><th>Autorisé</th><th>Dernière utilisation</th><th class="fin"></th></tr></thead>
       <tbody>
       <% it.grants.forEach((g) => { %>
         <tr>
-          <td><%= g.client_name || 'Client MCP' %> <small class="muted">(<%= g.username %>)</small></td>
-          <td><%= it.h.short(g.created_at) %></td>
-          <td><%= it.h.short(g.last_used_at) %></td>
-          <td><form method="post" action="/settings/mcp/grants/<%= g.id %>/revoke" class="inline"><button type="submit" class="secondary outline small">Révoquer</button></form></td>
+          <td><strong><%= g.client_name || 'Client MCP' %></strong> <span class="discret petit">par <%= g.username %></span></td>
+          <td class="quand"><%= it.h.short(g.created_at) %></td>
+          <td class="quand"><%= g.last_used_at ? it.h.ago(g.last_used_at) : '—' %></td>
+          <td class="fin"><form method="post" action="/settings/mcp/grants/<%= g.id %>/revoke"><button type="submit" class="danger compact">Révoquer</button></form></td>
         </tr>
       <% }) %>
       </tbody>
     </table>
+    </div>
     <% } %>
 
-    <form method="post" action="/settings/mcp/tools">
-      <label>Outils autorisables via MCP (un par ligne)
+    <form method="post" action="/settings/mcp/tools" style="margin-top:1.75rem">
+      <label>Outils que Claude peut donner à une ronde via MCP, un par ligne
         <textarea name="mcp_tools" rows="3" <%~ e.mcp_tools ? 'aria-invalid="true"' : '' %>><%= it.mcpTools.join('\n') %></textarea>
-        <small class="<%= e.mcp_tools ? 'error' : '' %>"><%= e.mcp_tools ?? 'Une ronde créée ou essayée via MCP ne peut utiliser que ces outils. Par défaut : ' + it.defaultMcpTools.join(', ') + '. Éviter Bash, Write ou Edit : ils donnent un shell ou l’écriture dans le conteneur.' %></small>
+        <small class="<%= e.mcp_tools ? 'erreur' : '' %>"><%= e.mcp_tools ?? 'Par défaut : ' + it.defaultMcpTools.join(', ') + '. Bash, Write ou Edit donnent un shell ou l’écriture dans le conteneur : une ronde qui les utilise ne peut alors plus être modifiée via MCP.' %></small>
       </label>
-      <button type="submit">Enregistrer</button>
+      <button type="submit">Enregistrer les outils</button>
     </form>
   <% } %>
-</article>
+  </div>
+</section>
 
-<article>
-  <header><strong>Alertes</strong></header>
-  <% if (!it.smtpEnabled) { %>
-  <p class="notice warn">SMTP non configuré (variable <code>SMTP_HOST</code>) : aucun mail ne sera envoyé.</p>
-  <% } %>
-  <form method="post" action="/settings/alerts">
-    <label>Email destinataire
-      <input type="email" name="alert_email" value="<%= it.alertEmail %>" placeholder="toi@exemple.fr" <%~ e.alert_email ? 'aria-invalid="true"' : '' %>>
-      <small class="<%= e.alert_email ? 'error' : '' %>"><%= e.alert_email ?? 'Un mail part quand Claude ne répond pas « RAS » ou quand un run échoue. Expéditeur : ' + it.smtpFrom %></small>
-    </label>
-    <button type="submit">Enregistrer</button>
-  </form>
-  <% if (it.alertEmail && it.smtpEnabled) { %>
-  <form method="post" action="/settings/alerts/test" class="inline">
-    <button type="submit" class="secondary outline">Envoyer un mail de test</button>
-  </form>
-  <% } %>
-</article>
+<section class="reglage" aria-labelledby="r-alertes">
+  <div>
+    <h2 id="r-alertes">Alertes</h2>
+    <p>Un mail part quand Claude ne répond pas « RAS » ou quand un passage échoue.</p>
+  </div>
+  <div>
+    <% if (!it.smtpEnabled) { %>
+    <p class="note attention">Envoi de mails non configuré sur le serveur (variable <code>SMTP_HOST</code>).</p>
+    <% } %>
+    <form method="post" action="/settings/alerts">
+      <label>Destinataire
+        <input type="email" name="alert_email" value="<%= it.alertEmail %>" placeholder="toi@exemple.fr" <%~ e.alert_email ? 'aria-invalid="true"' : '' %>>
+        <small class="<%= e.alert_email ? 'erreur' : '' %>"><%= e.alert_email ?? 'Expéditeur : ' + it.smtpFrom %></small>
+      </label>
+      <div class="actions">
+        <button type="submit">Enregistrer l'adresse</button>
+      </div>
+    </form>
+    <% if (it.alertEmail && it.smtpEnabled) { %>
+    <form method="post" action="/settings/alerts/test" style="margin-top:0.75rem">
+      <button type="submit" class="secondaire">Envoyer un mail de test</button>
+    </form>
+    <% } %>
+  </div>
+</section>

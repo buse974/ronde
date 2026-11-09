@@ -42,6 +42,7 @@ export function createStore(db) {
       return stmt(
         `SELECT t.*,
                 r.id AS last_run_id, r.status AS last_status, r.started_at AS last_started_at,
+                substr(COALESCE(r.error, r.result), 1, 160) AS last_excerpt,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM runs WHERE task_id = t.id
                    AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')) AS cost_30d
            FROM tasks t
@@ -153,6 +154,20 @@ export function createStore(db) {
               AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)`,
         ).get(taskId, `-${days} days`);
       return { d7: window(7), d30: window(30) };
+    },
+    /** Runs de toutes les rondes depuis `hours` heures (cadran). */
+    runsSince(hours) {
+      return stmt(
+        `SELECT r.id, r.task_id, r.status, r.started_at, t.name AS task_name FROM runs r JOIN tasks t ON t.id = r.task_id
+          WHERE r.started_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?) ORDER BY r.started_at`,
+      ).all(`-${hours} hours`);
+    },
+    /** Runs terminés d'une ronde sur `days` jours (bande des 30 nuits). */
+    runsForDays(taskId, days) {
+      return stmt(
+        `SELECT status, started_at FROM runs WHERE task_id = ? AND status != 'running'
+           AND started_at >= strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?)`,
+      ).all(taskId, `-${days} days`);
     },
     /** Au démarrage : un run resté « running » a été interrompu (crash, redéploiement). */
     recoverOrphanRuns() {

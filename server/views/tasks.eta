@@ -1,20 +1,45 @@
-<% layout('./layout', { ...it, title: 'Tâches' }) %>
-<div class="page-head">
-  <h2>Tâches</h2>
-  <a href="/tasks/new" role="button">Nouvelle tâche</a>
-</div>
+<% layout('./layout', { ...it, title: 'Rondes' }) %>
+<% const s = it.summary, h = it.h; %>
+
+<section class="veille">
+  <div>
+    <%~ include('./partials/cadran', it) %>
+    <div class="legende">
+      <span><i class="trait"></i>passage prévu</span>
+      <span><i style="background:var(--ras)"></i>RAS</span>
+      <span><i style="background:var(--alerte)"></i>alerte</span>
+      <span><i style="background:var(--echec)"></i>échec</span>
+    </div>
+  </div>
+  <div>
+    <h1><%= s.title %></h1>
+    <% if (it.tasks.length) { %>
+      <p>
+        <% if (s.active) { %><strong><%= s.active %> <%= s.active > 1 ? 'rondes planifiées' : 'ronde planifiée' %></strong><% } else { %>Aucune ronde planifiée<% } %><% if (s.manual) { %>, <%= s.manual %> <%= s.manual > 1 ? 'manuelles' : 'manuelle' %><% } %>.
+        <% if (s.next) { %>Prochain passage <strong><%= h.short(s.next.date.toISOString()).split(' ').pop() %></strong> : <%= s.next.name %>.<% } %>
+      </p>
+      <p>
+        <% if (s.total) { %>Depuis hier : <strong><%= s.ok %> RAS</strong><% if (s.alerts) { %>, <strong><%= s.alerts %> <%= s.alerts > 1 ? 'alertes' : 'alerte' %></strong><% } %><% if (s.failed) { %>, <strong><%= s.failed %> <%= s.failed > 1 ? 'échecs' : 'échec' %></strong><% } %>.<% } else { %>Aucun passage depuis hier.<% } %>
+      </p>
+    <% } else { %>
+      <p>Une ronde, c'est un prompt que Claude exécute sur ce serveur, à heure fixe ou à la demande. Il répond « RAS » quand tout va bien, sinon tu reçois une alerte.</p>
+    <% } %>
+    <div class="actions" style="margin-top:1.5rem">
+      <a href="/tasks/new" class="bouton">Nouvelle ronde</a>
+    </div>
+  </div>
+</section>
 
 <% if (!it.tokenStatus.configured) { %>
-<p class="notice warn">Aucun token Claude configuré : les runs échoueront. <a href="/settings">Ajouter un token</a>.</p>
+<p class="note attention">Aucun token Claude : les rondes échoueront. <a href="/settings">Ajouter le token dans les réglages</a>.</p>
 <% } %>
 
-<% if (!it.tasks.length) { %>
-<p class="muted">Aucune tâche pour l'instant. Pars d'un modèle ci-dessous, crée une tâche, ou demande à Claude de la concevoir via le MCP (Réglages &gt; Accès MCP).</p>
-<% } else { %>
-<div class="overflow-auto">
-<table class="striped">
+<% if (it.tasks.length) { %>
+<div class="titre-section"><h2>Rondes</h2></div>
+<div class="defile">
+<table class="registre">
   <thead>
-    <tr><th>Tâche</th><th>Planification</th><th>Prochain run</th><th>Dernier run</th><th>Coût 30 j</th><th>Active</th><th></th></tr>
+    <tr><th>Ronde</th><th class="masque-mobile">Fréquence</th><th class="masque-mobile">Prochain passage</th><th>Dernier résultat</th><th class="masque-mobile chiffre">Coût 30 j</th><th class="fin"><span class="discret">Active</span></th></tr>
   </thead>
   <tbody>
     <% it.tasks.forEach((t) => { %>
@@ -23,19 +48,18 @@
   </tbody>
 </table>
 </div>
-<p class="muted">Coût estimé en équivalent API. Avec un token d'abonnement, il n'est pas facturé : il est pris sur ton quota.</p>
+<p class="petit discret">Le coût est un équivalent API indicatif. Avec un token d'abonnement, rien n'est facturé à part : c'est pris sur ton quota.</p>
 <% } %>
 
-<h3>Modèles</h3>
-<div class="grid templates">
+<section class="modeles" aria-label="Modèles">
   <% Object.entries(it.templates).forEach(([key, t]) => { %>
-  <article>
-    <header><strong><%= t.name %></strong></header>
+  <div class="modele">
+    <h3><%= t.name %></h3>
     <p><%= t.summary %></p>
-    <p class="muted"><small><%= it.h.cronText(t.cron) %> · outils : <%= t.allowed_tools.join(', ') %> · données : <code><%= t.requires %></code> sur l'hôte</small></p>
-    <form method="post" action="/tasks/template/<%= key %>" class="inline">
-      <button type="submit" class="secondary outline small">Créer depuis ce modèle</button>
+    <p class="petit">Données fournies par <code><%= t.requires %></code> sur le serveur.</p>
+    <form method="post" action="/tasks/template/<%= key %>">
+      <button type="submit" class="secondaire compact">Créer depuis ce modèle</button>
     </form>
-  </article>
+  </div>
   <% }) %>
-</div>
+</section>

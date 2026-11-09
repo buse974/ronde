@@ -1,47 +1,49 @@
 <% const v = it.values, e = it.errors, editing = !!it.task; %>
-<% layout('./layout', { ...it, title: editing ? 'Modifier' : 'Nouvelle tâche' }) %>
+<% layout('./layout', { ...it, title: editing ? 'Modifier' : 'Nouvelle ronde' }) %>
 <% const field = (k) => e[k] ? 'aria-invalid="true"' : '' %>
-<h2><%= editing ? 'Modifier « ' + it.task.name + ' »' : 'Nouvelle tâche' %></h2>
-<form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>">
+<p class="petit"><a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>"><%= editing ? it.task.name : 'Toutes les rondes' %></a></p>
+<h1><%= editing ? 'Modifier la ronde' : 'Nouvelle ronde' %></h1>
+<form method="post" action="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" style="max-width:52rem;margin-top:1.5rem">
   <label>Nom
     <input name="name" value="<%= v.name %>" required maxlength="100" <%~ field('name') %>>
-    <% if (e.name) { %><small class="error"><%= e.name %></small><% } %>
+    <% if (e.name) { %><small class="erreur"><%= e.name %></small><% } %>
   </label>
 
   <label>Prompt
-    <textarea name="prompt" rows="10" required <%~ field('prompt') %>><%= v.prompt %></textarea>
-    <small class="<%= e.prompt ? 'error' : '' %>"><%= e.prompt ?? 'Convention : demande à Claude de répondre exactement « RAS » s’il n’y a rien à signaler. Toute autre réponse déclenche une alerte.' %></small>
+    <textarea name="prompt" class="prompt" required <%~ field('prompt') %>><%= v.prompt %></textarea>
+    <small class="<%= e.prompt ? 'erreur' : '' %>"><%= e.prompt ?? 'Demande à Claude de répondre exactement « RAS » s’il n’y a rien à signaler. Toute autre réponse déclenche une alerte.' %></small>
   </label>
 
-  <div class="grid">
-    <label>Planification (cron, fuseau <%= it.timezone %>)
-      <input name="cron" value="<%= v.cron %>" placeholder="vide = manuelle" <%~ field('cron') %>
+  <div class="deux">
+    <label>Fréquence (cron, fuseau <%= it.timezone %>)
+      <input name="cron" value="<%= v.cron %>" placeholder="vide : ronde manuelle" <%~ field('cron') %>
         hx-get="/cron-preview" hx-trigger="load, input changed delay:300ms" hx-target="#cron-preview" hx-sync="this:replace">
-      <small id="cron-preview" class="<%= e.cron ? 'error' : '' %>"><%= e.cron ?? '' %></small>
+      <small id="cron-preview" class="<%= e.cron ? 'erreur' : '' %>"><%= e.cron ?? '' %></small>
     </label>
-    <label>Outils autorisés (un par ligne)
+    <label>Outils autorisés, un par ligne
       <textarea name="allowed_tools" rows="3" placeholder="Read&#10;Bash(df:*)" <%~ field('allowed_tools') %>><%= (v.allowed_tools || []).join('\n') %></textarea>
-      <small class="<%= e.allowed_tools ? 'error' : '' %>"><%= e.allowed_tools ?? 'Vide = aucun outil. Seuls ces outils sont disponibles pour Claude.' %></small>
+      <small class="<%= e.allowed_tools ? 'erreur' : '' %>"><%= e.allowed_tools ?? 'Vide : aucun outil. Claude ne dispose que de ces outils.' %></small>
     </label>
   </div>
 
-  <div class="grid">
-    <label>Tours max
+  <div class="deux">
+    <label>Tours maximum
       <input type="number" name="max_turns" min="1" max="50" value="<%= v.max_turns %>" required <%~ field('max_turns') %>>
-      <% if (e.max_turns) { %><small class="error"><%= e.max_turns %></small><% } %>
+      <% if (e.max_turns) { %><small class="erreur"><%= e.max_turns %></small><% } %>
     </label>
-    <label>Timeout (secondes)
+    <label>Délai maximum (secondes)
       <input type="number" name="timeout_sec" min="30" max="3600" value="<%= v.timeout_sec %>" required <%~ field('timeout_sec') %>>
-      <% if (e.timeout_sec) { %><small class="error"><%= e.timeout_sec %></small><% } %>
+      <% if (e.timeout_sec) { %><small class="erreur"><%= e.timeout_sec %></small><% } %>
     </label>
   </div>
 
-  <label>
-    <input type="checkbox" role="switch" name="active" <%= v.active ? 'checked' : '' %>> Active <small class="muted">(sans effet pour une tâche manuelle)</small>
+  <label class="case">
+    <input type="checkbox" class="interrupteur" name="active" <%= v.active ? 'checked' : '' %>> Active
+    <span class="petit discret">(sans effet pour une ronde manuelle)</span>
   </label>
 
-  <div class="actions">
-    <button type="submit"><%= editing ? 'Enregistrer' : 'Créer' %></button>
-    <a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" role="button" class="secondary outline">Annuler</a>
+  <div class="actions" style="margin-top:1.5rem">
+    <button type="submit"><%= editing ? 'Enregistrer' : 'Créer la ronde' %></button>
+    <a href="<%= editing ? '/tasks/' + it.task.id : '/tasks' %>" class="bouton secondaire">Annuler</a>
   </div>
 </form>

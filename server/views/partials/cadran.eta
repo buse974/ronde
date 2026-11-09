@@ -1,0 +1,13 @@
+<% const d = it.dial; %>
+<svg class="cadran" viewBox="0 0 <%= d.size %> <%= d.size %>" role="img" aria-labelledby="cadran-titre">
+  <title id="cadran-titre">Cadran des 24 heures : <%= d.upcoming.length %> passages prévus, <%= d.past.length %> résultats depuis hier</title>
+  <circle class="fond" cx="<%= d.c %>" cy="<%= d.c %>" r="<%= d.rOuter + 6 %>"/>
+  <path class="nuit" d="<%= d.nightArc %>"/>
+  <% d.ticks.forEach((t) => { %><circle class="graduation<%= t.major ? ' majeure' : '' %>" cx="<%= t.p.x %>" cy="<%= t.p.y %>" r="<%= t.major ? 2.4 : 1.3 %>"/><% }) %>
+  <circle class="anneau" cx="<%= d.c %>" cy="<%= d.c %>" r="<%= d.rInner %>"/>
+  <% d.labels.forEach((l) => { %><text class="heure" x="<%= l.x %>" y="<%= l.y %>"><%= l.hour %> h</text><% }) %>
+  <% d.upcoming.forEach((u) => { %><line class="passage" x1="<%= u.a.x %>" y1="<%= u.a.y %>" x2="<%= u.b.x %>" y2="<%= u.b.y %>"><title><%= u.name %> à <%= it.h.short(u.date.toISOString()) %></title></line><% }) %>
+  <% d.past.forEach((p, i) => { %><circle class="point <%= p.status %>" cx="<%= p.p.x %>" cy="<%= p.p.y %>" r="5.5" style="--i: <%= i %>"><title><%= p.task_name %> : <%= it.h.statusLabel(p.status) %>, <%= it.h.short(p.started_at) %></title></circle><% }) %>
+  <line class="aiguille" x1="<%= d.c %>" y1="<%= d.c %>" x2="<%= d.hand.x %>" y2="<%= d.hand.y %>" style="--pivot: <%= d.c %>px <%= d.c %>px"/>
+  <circle class="pivot" cx="<%= d.c %>" cy="<%= d.c %>" r="4.5"/>
+</svg>

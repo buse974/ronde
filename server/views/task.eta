@@ -1,75 +1,90 @@
 <% layout('./layout', { ...it, title: it.task.name }) %>
 <% const t = it.task, h = it.h; %>
-<div class="page-head">
+<p class="petit"><a href="/tasks">Toutes les rondes</a></p>
+<div class="tete-ronde">
   <div>
-    <h2><%= t.name %> <% if (t.cron && !t.active) { %><span class="badge inactive">Inactive</span><% } %><% if (t.created_via === 'mcp') { %> <span class="badge">Créée via MCP</span><% } %></h2>
-    <% if (t.cron) { %>
-    <p class="muted"><%= h.cronText(t.cron) %> (<code><%= t.cron %></code>)<% if (t.active) { %> · prochain run : <%= h.nextRun(t.cron) %><% } %></p>
-    <% } else { %>
-    <p class="muted">Tâche manuelle : lancée uniquement à la demande.</p>
-    <% } %>
+    <h1><%= t.name %></h1>
+    <p>
+      <% if (t.cron) { %><%= h.cronText(t.cron) %> <span class="discret">(<code><%= t.cron %></code>)</span>.
+        <% if (t.active) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } else { %><span class="pastille">En pause</span><% } %>
+      <% } else { %>Ronde manuelle, lancée à la demande.<% } %>
+      <% if (t.created_via === 'mcp') { %> <span class="pastille">Créée par Claude via MCP</span><% } %>
+    </p>
   </div>
   <div class="actions">
-    <form method="post" action="/tasks/<%= t.id %>/run" class="inline"><button type="submit">Lancer maintenant</button></form>
-    <a href="/tasks/<%= t.id %>/edit" role="button" class="secondary outline">Modifier</a>
+    <form method="post" action="/tasks/<%= t.id %>/run"><button type="submit">Lancer maintenant</button></form>
+    <a href="/tasks/<%= t.id %>/edit" class="bouton secondaire">Modifier</a>
   </div>
 </div>
 
-<% if (it.started === 'busy') { %><p class="notice warn">Un run de cette tâche est déjà en cours.</p><% } %>
+<% if (it.started === 'busy') { %><p class="note attention">Un passage de cette ronde est déjà en cours.</p><% } %>
 
-<div class="grid stats">
-  <% [['7 derniers jours', it.stats.d7], ['30 derniers jours', it.stats.d30]].forEach(([label, s]) => { %>
-  <article>
-    <header><%= label %></header>
-    <p><strong><%= s.runs %></strong> runs · <span class="badge ok"><%= s.ok ?? 0 %> RAS</span> <span class="badge alert"><%= s.alert ?? 0 %> alertes</span> <span class="badge failed"><%= s.failed ?? 0 %> échecs</span></p>
-    <p>Tokens : <%= h.tokens(s.tokens_in) %> entrée · <%= h.tokens(s.tokens_out) %> sortie</p>
-    <p>Coût estimé : <strong><%= h.cost(s.cost) %></strong> <small class="muted">(équivalent API)</small></p>
-  </article>
+<h3>30 derniers jours</h3>
+<div class="bande" role="img" aria-label="Pire résultat de chaque jour sur 30 jours">
+  <% it.strip.forEach((d) => { %><span class="<%= d.status || '' %>" title="<%= d.label %> : <%= d.status ? h.statusLabel(d.status) : 'aucun passage' %>"></span><% }) %>
+</div>
+<div class="chiffres">
+  <% [['Sur 7 jours', it.stats.d7], ['Sur 30 jours', it.stats.d30]].forEach(([label, s]) => { %>
+  <div>
+    <% const n = (x, un, plusieurs) => `${x ?? 0} ${(x ?? 0) > 1 ? plusieurs : un}`; %>
+    <p><strong><%= label %></strong> : <%= n(s.runs, 'passage', 'passages') %>, <%= s.ok ?? 0 %> RAS, <%= n(s.alert, 'alerte', 'alertes') %>, <%= n(s.failed, 'échec', 'échecs') %>.</p>
+    <p><%= h.tokens(s.tokens_in) %> tokens en entrée, <%= h.tokens(s.tokens_out) %> en sortie, coût estimé <strong><%= h.cost(s.cost) %></strong>.</p>
+  </div>
   <% }) %>
 </div>
 
-<details>
-  <summary>Configuration</summary>
-  <p><strong>Outils :</strong> <%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %> · <strong>Tours max :</strong> <%= t.max_turns %> · <strong>Timeout :</strong> <%= t.timeout_sec %> s</p>
-  <pre><%= t.prompt %></pre>
-</details>
-
-<h3>Historique</h3>
+<div class="titre-section"><h2>Main courante</h2></div>
 <% if (!it.runs.length) { %>
-<p class="muted">Aucun run pour l'instant.</p>
+<p class="vide">Aucun passage pour l'instant. Lance la ronde pour voir sa première réponse.</p>
 <% } else { %>
-<div class="overflow-auto">
-<table class="striped">
-  <thead><tr><th>#</th><th>Début</th><th>Déclencheur</th><th>Statut</th><th>Durée</th><th>Tokens entrée / sortie</th><th>Coût estimé</th><th>Réponse</th></tr></thead>
+<div class="defile">
+<table class="registre">
+  <thead><tr><th>Passage</th><th>État</th><th>Réponse</th><th class="masque-mobile chiffre">Durée</th><th class="masque-mobile chiffre">Tokens</th><th class="masque-mobile chiffre">Coût</th></tr></thead>
   <tbody>
   <% it.runs.forEach((r) => { %>
+    <% if (r.group) { %>
+    <tr class="regroupe">
+      <% const de = h.short(r.oldest.started_at), a = h.short(r.newest.started_at); %>
+      <td class="quand"><%= de %> à <%= de.split(' ')[0] === a.split(' ')[0] ? a.split(' ').pop() : a %></td>
+      <td><span class="etat ok">RAS</span></td>
+      <td><%= r.count %> passages sans rien à signaler</td>
+      <td class="masque-mobile chiffre"></td>
+      <td class="masque-mobile chiffre"></td>
+      <td class="masque-mobile chiffre"><%= h.cost(r.cost) %></td>
+    </tr>
+    <% return; } %>
     <tr>
-      <td><a href="/runs/<%= r.id %>"><%= r.id %></a></td>
-      <td><%= h.short(r.started_at) %></td>
-      <td><%= r.trigger === 'manual' ? 'Manuel' : 'Planifié' %></td>
-      <td><span class="badge <%= r.status %>"><%= h.statusLabel(r.status) %></span><% if (r.alert_sent) { %> <span title="Mail envoyé">✉</span><% } %></td>
-      <td><%= h.duration(r.duration_ms) %></td>
-      <td><%= h.tokens(h.tokensIn(r)) %> / <%= h.tokens(r.output_tokens) %></td>
-      <td><%= h.cost(r.cost_usd) %></td>
-      <td class="truncate"><%= r.error || r.result || '' %></td>
+      <td class="quand"><a href="/runs/<%= r.id %>"><%= h.short(r.started_at) %></a><br><span class="petit"><%= r.trigger === 'manual' ? 'à la demande' : 'planifié' %></span></td>
+      <td><span class="etat <%= r.status %>"><%= h.statusLabel(r.status) %></span><% if (r.alert_sent) { %><br><span class="petit discret">mail envoyé</span><% } %></td>
+      <td class="extrait"><%= r.error || r.result || '' %></td>
+      <td class="masque-mobile chiffre"><%= h.duration(r.duration_ms) %></td>
+      <td class="masque-mobile chiffre"><%= h.tokens(h.tokensIn(r)) %> / <%= h.tokens(r.output_tokens) %></td>
+      <td class="masque-mobile chiffre"><%= h.cost(r.cost_usd) %></td>
     </tr>
   <% }) %>
   </tbody>
 </table>
 </div>
 <% if (it.pages > 1) { %>
-<nav class="pager">
-  <% if (it.page > 1) { %><a href="?page=<%= it.page - 1 %>">← Plus récents</a><% } %>
-  <span>Page <%= it.page %> / <%= it.pages %></span>
-  <% if (it.page < it.pages) { %><a href="?page=<%= it.page + 1 %>">Plus anciens →</a><% } %>
+<nav class="pages" aria-label="Pages de l'historique">
+  <% if (it.page > 1) { %><a href="?page=<%= it.page - 1 %>">Plus récents</a><% } %>
+  <span>Page <%= it.page %> sur <%= it.pages %></span>
+  <% if (it.page < it.pages) { %><a href="?page=<%= it.page + 1 %>">Plus anciens</a><% } %>
 </nav>
 <% } %>
 <% } %>
 
-<details class="danger-zone">
-  <summary>Supprimer la tâche</summary>
+<div style="margin-top:2.5rem">
+<details>
+  <summary>Prompt et réglages</summary>
+  <p>Outils : <%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %>. Tours maximum : <%= t.max_turns %>. Délai maximum : <%= t.timeout_sec %> s.</p>
+  <pre><%= t.prompt %></pre>
+</details>
+<details class="zone-danger">
+  <summary>Supprimer la ronde</summary>
   <form method="post" action="/tasks/<%= t.id %>/delete">
-    <p>La tâche et tout son historique seront supprimés.</p>
-    <button type="submit" class="secondary">Supprimer définitivement</button>
+    <p>La ronde et toute sa main courante seront supprimées.</p>
+    <button type="submit" class="danger">Supprimer définitivement</button>
   </form>
 </details>
+</div>

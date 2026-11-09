@@ -1,7 +1,8 @@
 <% layout('./layout', { ...it, title: 'Connexion' }) %>
-<article class="narrow">
-  <h2>Connexion</h2>
-  <% if (it.error) { %><p class="error"><%= it.error %></p><% } %>
+<div class="seul">
+  <%~ include('./partials/embleme', { cls: 'embleme' }) %>
+  <h1>Connexion</h1>
+  <% if (it.error) { %><p class="note mal"><%= it.error %></p><% } %>
   <form method="post" action="/login">
     <input type="hidden" name="next" value="<%= it.next %>">
     <label>Identifiant
@@ -12,4 +13,4 @@
     </label>
     <button type="submit">Se connecter</button>
   </form>
-</article>
+</div>
