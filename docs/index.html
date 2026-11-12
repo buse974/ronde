@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ronde — des rondes Claude sur ton serveur</title>
+<meta name="description" content="Planificateur de tâches Claude auto-hébergé et open source : des prompts claude -p planifiés, l'historique des runs, le coût, et un mail seulement quand quelque chose ne va pas.">
+<meta property="og:title" content="ronde — des rondes Claude sur ton serveur">
+<meta property="og:description" content="Claude fait le tour de ton serveur la nuit. Il répond RAS, ou il t'écrit.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+@font-face {
+  font-family: 'Archivo';
+  src: url('fonts/archivo-wdth.woff2') format('woff2');
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-display: swap;
+}
+:root {
+  --nuit: #151b2e;
+  --nuit-2: #1d2540;
+  --nuit-3: #252f50;
+  --trait: #2f3a5e;
+  --craie: #e9e7e1;
+  --brume: #9aa3bc;
+  --brume-2: #6f7894;
+  --ras: #6cc4a8;
+  --alerte: #f2b441;
+  --echec: #ef6461;
+  --cours: #8fb2ff;
+  --font: 'Archivo', system-ui, sans-serif;
+  --mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--nuit);
+  color: var(--craie);
+  font-family: var(--font);
+  font-size: 1.05rem;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+::selection { background: var(--cours); color: var(--nuit); }
+a { color: var(--craie); text-decoration-color: var(--brume-2); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--craie); }
+:focus-visible { outline: 2px solid var(--cours); outline-offset: 3px; border-radius: 3px; }
+code, pre { font-family: var(--mono); font-size: 0.88em; }
+code { background: var(--nuit-3); padding: 0.1em 0.35em; border-radius: 4px; }
+p { margin: 0 0 1rem; }
+h1, h2, h3 { margin: 0; line-height: 1.1; letter-spacing: -0.01em; }
+
+.page { max-width: 1120px; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2.5rem); }
+
+/* En-tête */
+.entete { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.4rem 0; }
+.marque { display: flex; align-items: center; gap: 0.6rem; font-weight: 800; font-stretch: 80%; font-size: 1.3rem; text-decoration: none; }
+.marque img { width: 30px; height: 30px; }
+.entete nav { display: flex; gap: 1.2rem; align-items: center; font-size: 0.92rem; }
+.entete nav a { color: var(--brume); text-decoration: none; }
+.entete nav a:hover { color: var(--craie); }
+@media (max-width: 640px) { .entete nav .facultatif { display: none; } }
+
+/* Boutons */
+.bouton {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  padding: 0.75rem 1.2rem; border-radius: 6px;
+  background: var(--craie); color: var(--nuit); border: 1px solid var(--craie);
+  font-weight: 700; font-stretch: 90%; text-decoration: none; white-space: nowrap;
+}
+.bouton:hover { background: #fff; border-color: #fff; }
+.bouton.secondaire { background: transparent; color: var(--craie); border-color: var(--trait); }
+.bouton.secondaire:hover { background: var(--nuit-3); border-color: var(--brume-2); }
+.bouton svg { width: 18px; height: 18px; flex: none; }
+
+/* Héros */
+.heros {
+  display: grid; grid-template-columns: 1.05fr 1fr; gap: clamp(2rem, 5vw, 4rem);
+  align-items: center; padding: clamp(2.5rem, 7vw, 5.5rem) 0 clamp(3rem, 7vw, 5rem);
+}
+.surtitre { color: var(--ras); font-weight: 700; font-stretch: 85%; letter-spacing: 0.08em; text-transform: uppercase; font-size: 0.82rem; margin-bottom: 1.1rem; }
+.heros h1 { font-size: clamp(2.4rem, 6vw, 4.1rem); font-weight: 850; font-stretch: 72%; margin-bottom: 1.3rem; }
+.heros h1 em { font-style: normal; color: var(--ras); }
+.heros .chapo { font-size: 1.18rem; color: var(--brume); max-width: 34rem; margin-bottom: 2rem; }
+.heros .chapo strong { color: var(--craie); font-weight: 600; }
+.actions { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+.mention { margin-top: 1.4rem; font-size: 0.86rem; color: var(--brume-2); }
+
+/* Main courante (maquette) */
+.registre {
+  background: var(--nuit-2); border: 1px solid var(--trait); border-radius: 10px;
+  box-shadow: 0 30px 60px -30px rgba(0,0,0,0.6);
+  overflow: hidden;
+}
+.registre-tete {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 0.9rem 1.2rem; border-bottom: 1px solid var(--trait);
+  font-size: 0.85rem; color: var(--brume);
+}
+.registre-tete strong { color: var(--craie); font-stretch: 80%; font-size: 1rem; }
+.ligne {
+  display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 0.2rem 0.9rem;
+  padding: 0.85rem 1.2rem; border-bottom: 1px solid color-mix(in srgb, var(--trait) 60%, transparent);
+  align-items: baseline;
+}
+.ligne:last-child { border-bottom: 0; }
+.heure { font-family: var(--mono); font-size: 0.85rem; color: var(--brume-2); }
+.tache { font-weight: 650; font-stretch: 90%; }
+.reponse { grid-column: 2 / 4; font-size: 0.88rem; color: var(--brume); }
+.reponse.alerte-texte { color: var(--craie); border-left: 2px solid var(--alerte); padding-left: 0.7rem; margin-top: 0.25rem; }
+.etat { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 700; font-stretch: 85%; font-size: 0.88rem; white-space: nowrap; }
+.etat::before { content: ''; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentColor; }
+.etat.ok { color: var(--ras); }
+.etat.alert { color: var(--alerte); }
+.etat.failed { color: var(--echec); }
+.etat.running { color: var(--cours); }
+.etat.running::before { animation: veille 1.4s ease-in-out infinite; }
+@keyframes veille { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .etat.running::before { animation: none; } }
+
+/* Sections */
+section { padding: clamp(3rem, 7vw, 5rem) 0; border-top: 1px solid var(--trait); }
+.titre-section { display: grid; grid-template-columns: 1fr; gap: 0.7rem; margin-bottom: 2.4rem; max-width: 46rem; }
+.titre-section .numero { font-family: var(--mono); color: var(--brume-2); font-size: 0.85rem; }
+.titre-section h2 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800; font-stretch: 75%; }
+.titre-section p { color: var(--brume); font-size: 1.08rem; margin: 0; }
+
+/* Convention RAS */
+.convention { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--trait); border: 1px solid var(--trait); border-radius: 10px; overflow: hidden; }
+.convention > div { background: var(--nuit); padding: 1.5rem 1.4rem; }
+.convention h3 { font-size: 1.15rem; font-stretch: 85%; margin: 0.8rem 0 0.5rem; }
+.convention p { color: var(--brume); font-size: 0.95rem; margin: 0; }
+
+/* Grille de fonctionnalités */
+.grille { display: grid; grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr)); gap: 2rem 2.5rem; }
+.grille h3 { font-size: 1.12rem; font-stretch: 85%; margin-bottom: 0.45rem; }
+.grille p { color: var(--brume); font-size: 0.97rem; margin: 0; }
+.grille .trait { width: 1.6rem; height: 2px; background: var(--ras); margin-bottom: 0.9rem; }
+
+/* MCP : conversation */
+.deux-col { display: grid; grid-template-columns: 1fr 1.1fr; gap: clamp(2rem, 5vw, 4rem); align-items: start; }
+.conversation { background: var(--nuit-2); border: 1px solid var(--trait); border-radius: 10px; padding: 1.3rem; display: grid; gap: 0.9rem; font-size: 0.94rem; }
+.bulle { padding: 0.75rem 1rem; border-radius: 8px; max-width: 92%; }
+.bulle.moi { background: var(--nuit-3); justify-self: end; }
+.bulle.claude { border: 1px solid var(--trait); }
+.bulle .qui { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--brume-2); margin-bottom: 0.2rem; font-weight: 700; }
+.outil { font-family: var(--mono); font-size: 0.8rem; color: var(--cours); }
+.etapes { list-style: none; padding: 0; margin: 1.5rem 0 0; counter-reset: e; display: grid; gap: 0.9rem; }
+.etapes li { counter-increment: e; display: grid; grid-template-columns: 2rem 1fr; gap: 0.6rem; color: var(--brume); }
+.etapes li::before { content: counter(e, decimal-leading-zero); font-family: var(--mono); font-size: 0.85rem; color: var(--ras); padding-top: 0.1rem; }
+.etapes strong { color: var(--craie); font-weight: 600; }
+
+/* Installation */
+pre {
+  margin: 0; background: #10152a; border: 1px solid var(--trait); border-radius: 8px;
+  padding: 1.1rem 1.2rem; overflow-x: auto; line-height: 1.7; color: var(--craie);
+}
+pre .c { color: var(--brume-2); }
+pre .p { color: var(--ras); user-select: none; }
+.install { display: grid; gap: 1.6rem; }
+.install h3 { font-size: 1rem; font-stretch: 85%; margin-bottom: 0.6rem; color: var(--brume); font-weight: 600; }
+
+/* Sécurité */
+.liste-secu { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 0.9rem 2.5rem; }
+.liste-secu li { padding-left: 1.4rem; position: relative; color: var(--brume); }
+.liste-secu li::before { content: ''; position: absolute; left: 0; top: 0.62em; width: 0.5rem; height: 0.5rem; border-radius: 50%; border: 2px solid var(--ras); }
+.liste-secu strong { color: var(--craie); font-weight: 600; }
+
+/* Appel final */
+.final { text-align: center; padding: clamp(4rem, 9vw, 6.5rem) 0; }
+.final img { width: 64px; height: 64px; margin-bottom: 1.4rem; }
+.final h2 { font-size: clamp(2rem, 5vw, 3rem); font-weight: 850; font-stretch: 72%; margin-bottom: 1rem; }
+.final p { color: var(--brume); max-width: 36rem; margin: 0 auto 2rem; }
+.final .actions { justify-content: center; }
+.statut { display: inline-block; font-size: 0.8rem; color: var(--alerte); border: 1px solid color-mix(in srgb, var(--alerte) 40%, transparent); border-radius: 999px; padding: 0.2rem 0.75rem; margin-bottom: 1.2rem; }
+
+footer { border-top: 1px solid var(--trait); padding: 1.8rem 0 2.5rem; font-size: 0.86rem; color: var(--brume-2); display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+footer a { color: var(--brume); }
+
+@media (max-width: 860px) {
+  .heros, .deux-col { grid-template-columns: 1fr; }
+  .convention { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .ligne { grid-template-columns: 1fr auto; padding: 0.8rem 1rem; }
+  .heure { grid-column: 1 / 3; }
+  .reponse { grid-column: 1 / 3; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="entete">
+    <a class="marque" href="#"><img src="logo.svg" alt="">ronde</a>
+    <nav>
+      <a class="facultatif" href="#principe">Principe</a>
+      <a class="facultatif" href="#mcp">Avec Claude</a>
+      <a class="facultatif" href="#installation">Installation</a>
+      <a href="https://github.com/buse974/ronde">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="heros">
+      <div>
+        <p class="surtitre">Open source · auto-hébergé · MIT</p>
+        <h1>Claude fait la ronde sur ton serveur. Il répond <em>RAS</em>, ou il t'écrit.</h1>
+        <p class="chapo">ronde planifie des prompts <code>claude&nbsp;-p</code> sur ta machine, garde l'historique et le coût de chaque passage, et <strong>ne t'envoie un mail que quand il y a quelque chose à signaler.</strong></p>
+        <div class="actions">
+          <a class="bouton" href="https://github.com/buse974/ronde">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            Voir sur GitHub
+          </a>
+          <a class="bouton secondaire" href="#installation">Installer en 2 minutes</a>
+        </div>
+        <p class="mention">Fonctionne avec ton abonnement Claude Pro/Max — ou une clé API.</p>
+      </div>
+
+      <div class="registre" role="img" aria-label="Exemple de main courante : quatre passages, deux RAS, une alerte, un en cours">
+        <div class="registre-tete"><strong>Main courante</strong><span>nuit du 11 au 12</span></div>
+        <div class="ligne">
+          <span class="heure">02:00</span><span class="tache">Disque et Docker</span><span class="etat ok">RAS</span>
+          <span class="reponse">38 % utilisé · 0,02 $ · 14 s</span>
+        </div>
+        <div class="ligne">
+          <span class="heure">03:00</span><span class="tache">Certificats TLS</span><span class="etat ok">RAS</span>
+          <span class="reponse">Tous valides plus de 30 jours · 0,01 $ · 9 s</span>
+        </div>
+        <div class="ligne">
+          <span class="heure">04:00</span><span class="tache">SSH et fail2ban</span><span class="etat alert">Alerte</span>
+          <span class="reponse alerte-texte">Connexion SSH réussie à 03:41 avec une clé inconnue, absente d'<code>authorized_keys</code>. Origine : 185.x.x.x. Mail envoyé.</span>
+        </div>
+        <div class="ligne">
+          <span class="heure">05:00</span><span class="tache">Sauvegardes</span><span class="etat running">En cours</span>
+        </div>
+      </div>
+    </div>
+
+    <section id="principe">
+      <div class="titre-section">
+        <span class="numero">01 — Le principe</span>
+        <h2>Une ronde, c'est un prompt, une heure et une règle simple.</h2>
+        <p>Tu écris ce que Claude doit vérifier. Il le vérifie à l'heure dite. Le silence veut dire que tout va bien.</p>
+      </div>
+      <div class="convention">
+        <div>
+          <span class="etat ok">RAS</span>
+          <h3>Rien à signaler</h3>
+          <p>Le prompt demande de répondre exactement <code>RAS</code> si tout va bien. Le passage est noté, personne n'est dérangé.</p>
+        </div>
+        <div>
+          <span class="etat alert">Alerte</span>
+          <h3>Toute autre réponse</h3>
+          <p>Claude a vu quelque chose. Sa réponse devient l'alerte, et part par mail.</p>
+        </div>
+        <div>
+          <span class="etat failed">Échec</span>
+          <h3>Le passage n'a pas abouti</h3>
+          <p>Code de sortie non nul, erreur, timeout ou sortie illisible : tu es prévenu aussi.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="titre-section">
+        <span class="numero">02 — Ce que ça fait</span>
+        <h2>Petit, lisible, et chez toi.</h2>
+      </div>
+      <div class="grille">
+        <div><div class="trait"></div><h3>Planification cron ou manuelle</h3><p>Chaque ronde a son cron, ou aucun : tu la lances à la demande. Jamais deux passages de la même ronde en même temps.</p></div>
+        <div><div class="trait"></div><h3>Historique et consommation</h3><p>Chaque run garde sa réponse, ses tokens, son coût estimé et sa durée. Tu sais ce que coûte ta tranquillité.</p></div>
+        <div><div class="trait"></div><h3>Outils sous contrôle</h3><p>Pour chaque ronde : les outils autorisés, le nombre de tours max, le timeout. Rien de plus que ce dont la tâche a besoin.</p></div>
+        <div><div class="trait"></div><h3>Modèles prêts à l'emploi</h3><p>Disque et Docker, SSH et fail2ban : des scripts hôte produisent les données, Claude les lit en lecture seule.</p></div>
+        <div><div class="trait"></div><h3>Ton abonnement suffit</h3><p><code>claude setup-token</code>, tu colles le token, c'est pris sur ton quota Pro/Max. Pas de facturation à part.</p></div>
+        <div><div class="trait"></div><h3>Un seul conteneur</h3><p>Node, SQLite, une UI en HTML serveur. Pas de base externe, pas de file d'attente, pas de build front.</p></div>
+      </div>
+    </section>
+
+    <section id="mcp">
+      <div class="deux-col">
+        <div>
+          <div class="titre-section" style="margin-bottom:0">
+            <span class="numero">03 — Avec Claude</span>
+            <h2>Décris ce que tu veux surveiller. Claude écrit la ronde.</h2>
+            <p>ronde expose un serveur MCP. Depuis Claude Code ou claude.ai, Claude conçoit la ronde avec toi, l'essaie pour de vrai, puis la crée quand tu valides.</p>
+          </div>
+          <ol class="etapes">
+            <li><span><strong>Il regarde</strong> les données disponibles sur l'hôte et les modèles existants.</span></li>
+            <li><span><strong>Il te pose les bonnes questions</strong> : seuils, fréquence, exceptions.</span></li>
+            <li><span><strong>Il essaie le prompt</strong> sur le serveur et te montre le résultat et le coût.</span></li>
+            <li><span><strong>Il crée la ronde</strong>, seulement après ton accord.</span></li>
+          </ol>
+        </div>
+        <div class="conversation" aria-label="Exemple de conversation">
+          <div class="bulle moi"><span class="qui">Toi</span>Préviens-moi si le disque se remplit trop vite.</div>
+          <div class="bulle claude"><span class="qui">Claude</span><span class="outil">list_host_data · list_templates</span><br>J'ai l'historique <code>df</code> sur 7 jours. Tu veux une alerte à partir de quel seuil — 85 % ? Et aussi si la croissance dépasse 5 % par jour ?</div>
+          <div class="bulle moi"><span class="qui">Toi</span>Oui, les deux. Tous les matins à 7 h.</div>
+          <div class="bulle claude"><span class="qui">Claude</span><span class="outil">test_prompt</span><br>Essai : réponse <span class="etat ok">RAS</span> en 11 s, 0,02 $. Je crée la ronde « Disque » à <code>0 7 * * *</code> ?</div>
+          <div class="bulle moi"><span class="qui">Toi</span>Vas-y.</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="installation">
+      <div class="titre-section">
+        <span class="numero">04 — Installation</span>
+        <h2>Trois commandes, un compte admin.</h2>
+        <p>Un serveur avec Docker suffit. Le code d'installation s'affiche dans les logs.</p>
+      </div>
+      <div class="install">
+        <div>
+          <h3>Lancer ronde</h3>
+<pre><span class="p">$ </span>git clone https://github.com/buse974/ronde.git &amp;&amp; cd ronde
+<span class="p">$ </span>docker compose up -d
+<span class="p">$ </span>docker compose logs ronde   <span class="c"># code d'installation</span></pre>
+        </div>
+        <div>
+          <h3>Récupérer ton token Claude (sur ta machine), puis le coller dans Réglages</h3>
+<pre><span class="p">$ </span>claude setup-token</pre>
+        </div>
+        <div>
+          <h3>Optionnel : piloter ronde depuis Claude Code</h3>
+<pre><span class="p">$ </span>claude mcp add --scope user --transport http ronde https://ton-serveur/mcp</pre>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="titre-section">
+        <span class="numero">05 — Sécurité</span>
+        <h2>Claude a les clés de la ronde, pas celles de la maison.</h2>
+      </div>
+      <ul class="liste-secu">
+        <li><strong>Utilisateur dédié.</strong> <code>claude</code> tourne sous <code>runner</code>, avec un environnement vide : il ne voit ni la base, ni le secret, ni l'environnement de l'app.</li>
+        <li><strong>Conteneur minimal.</strong> Trois capacités seulement (<code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>) et <code>no-new-privileges</code>. Pas de socket Docker.</li>
+        <li><strong>Token chiffré.</strong> AES-256-GCM en base, clé dérivée d'un secret généré au premier démarrage.</li>
+        <li><strong>Données hôte en lecture seule.</strong> Les scripts tournent sur l'hôte ; le conteneur ne fait que lire <code>/host-metrics</code>.</li>
+        <li><strong>MCP en OAuth 2.1.</strong> PKCE, aucun token à copier, accès révocable, et outils limités par défaut à <code>Read</code>, <code>Grep</code>, <code>Glob</code>.</li>
+        <li><strong>UI verrouillée.</strong> Compte admin argon2, cookie <code>HttpOnly</code> + <code>SameSite=Strict</code>, contrôle d'origine, limite des tentatives.</li>
+      </ul>
+    </section>
+
+    <section class="final">
+      <img src="logo.svg" alt="">
+      <div><span class="statut">Prototype · v0.1</span></div>
+      <h2>Dors tranquille. ronde veille.</h2>
+      <p>Le projet est jeune et ouvert aux contributions : essaie-le, ouvre une issue, propose une ronde utile à tout le monde.</p>
+      <div class="actions">
+        <a class="bouton" href="https://github.com/buse974/ronde">Voir sur GitHub</a>
+        <a class="bouton secondaire" href="https://github.com/buse974/ronde/issues">Ouvrir une issue</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>ronde · licence MIT · © 2026 Lyleoo</span>
+    <span>Node 22 · Express 5 · SQLite · htmx · MCP</span>
+  </footer>
+</div>
+</body>
+</html>

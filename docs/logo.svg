@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ronde">
+  <!-- Le cadran du veilleur, avec le point vert « RAS ». Mêmes couleurs que l'interface. -->
+  <rect width="64" height="64" rx="14" fill="#151b2e"/>
+  <circle cx="32" cy="33" r="19" fill="none" stroke="#e9e7e1" stroke-width="4"/>
+  <path d="M32 33 L32 20.5" stroke="#e9e7e1" stroke-width="4" stroke-linecap="round"/>
+  <path d="M32 33 L40.5 37.5" stroke="#e9e7e1" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="47" cy="18.5" r="5.5" fill="#6cc4a8" stroke="#151b2e" stroke-width="2.6"/>
+</svg>

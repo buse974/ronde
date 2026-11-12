@@ -4,6 +4,8 @@
 
 Planificateur de tâches Claude auto-hébergé, open source.
 
+**→ [ronde.altstud.io](https://ronde.altstud.io)**
+
 Une petite UI web pour créer des tâches récurrentes qui lancent `claude -p` sur ton serveur, avec l'historique des runs, la consommation (tokens, coût estimé) et une alerte par mail quand Claude signale un problème.
 
 > Prototype. Hors périmètre pour l'instant : connecteurs MCP dans les rondes, seuils de consommation.
