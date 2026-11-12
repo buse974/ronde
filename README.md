@@ -93,6 +93,12 @@ En dev, sans `RUNNER_UID`, `claude` tourne sous ton utilisateur.
 
 Stack : Node 22, Express 5, SQLite (better-sqlite3), croner, Eta + htmx + Pico.css, argon2, nodemailer, zod, SDK MCP officiel, vitest.
 
+## Landing page
+
+La page de présentation, [ronde.altstud.io](https://ronde.altstud.io), est dans `docs/` : HTML et CSS statiques, sans JavaScript ni build. Elle reprend la police, le logo et les couleurs de l'app. Le dossier `docs/` n'entre pas dans l'image Docker de l'app.
+
+Aperçu en local : ouvre `docs/index.html` dans un navigateur.
+
 ## Licence
 
 MIT
