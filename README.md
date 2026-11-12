@@ -19,6 +19,8 @@ Une petite UI web pour créer des tâches récurrentes qui lancent `claude -p` s
 
 ## Installation
 
+> Guide complet (HTTPS, mails, MCP, données hôte, mises à jour, sauvegardes, dépannage) : **[INSTALL.md](INSTALL.md)**.
+
 ```bash
 git clone https://github.com/buse974/ronde.git && cd ronde
 docker compose up -d
