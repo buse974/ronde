@@ -513,3 +513,13 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .historique pre { font-size: 0.85em; max-height: 12rem; overflow: auto; margin: 0.3rem 0; }
 .note.archive { border-left-color: var(--brume); }
 .note.archive .actions { margin-top: 0.6rem; }
+
+/* --- Main courante : réponse dépliable sous la ligne --------------------- */
+.registre tr.depliable { cursor: pointer; }
+.registre tr.depliable:hover td { background: color-mix(in srgb, var(--nuit-2) 70%, transparent); }
+.registre tr.depliable:focus-visible { outline: 2px solid var(--cours); outline-offset: -2px; }
+.registre tr.depliable[aria-expanded='true'] td { border-bottom-color: transparent; }
+.registre tr.depliable[aria-expanded='true'] .extrait { white-space: normal; color: var(--craie); }
+.registre tr.detail-passage td { padding-top: 0; }
+.registre tr.detail-passage .reponse { margin: 0 0 0.5rem; max-height: 24rem; overflow: auto; }
+.registre tr.detail-passage p { margin: 0; }

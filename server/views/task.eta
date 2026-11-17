@@ -76,13 +76,20 @@
       </td>
     </tr>
     <% return; } %>
-    <tr>
+    <% const texte = r.error ? (r.result ? r.error + '\n\n' + r.result : r.error) : r.result; %>
+    <tr class="depliable" data-detail="detail-<%= r.id %>" tabindex="0" aria-expanded="false" aria-controls="detail-<%= r.id %>" title="Cliquer pour voir la réponse">
       <td class="quand"><a href="/runs/<%= r.id %>"><%= h.short(r.started_at) %></a><br><span class="petit"><%= r.trigger === 'manual' ? 'à la demande' : 'planifié' %></span></td>
       <td><span class="etat <%= r.status %>"><%= h.statusLabel(r.status) %></span><% if (r.alert_sent) { %><br><span class="petit discret">mail envoyé</span><% } %></td>
       <td class="extrait"><%= r.error || r.result || '' %></td>
       <td class="masque-mobile chiffre"><%= h.duration(r.duration_ms) %></td>
       <td class="masque-mobile chiffre"><%= h.tokens(h.tokensIn(r)) %> / <%= h.tokens(r.output_tokens) %></td>
       <td class="masque-mobile chiffre"><%= h.cost(r.cost_usd) %></td>
+    </tr>
+    <tr class="detail-passage" id="detail-<%= r.id %>" hidden>
+      <td colspan="6">
+        <div class="reponse <%= r.status %>"><%= texte || (r.status === 'running' ? 'En cours…' : '(aucune réponse)') %></div>
+        <p class="petit"><a href="/runs/<%= r.id %>">Ouvrir le passage</a> <span class="discret">(durée, tokens, sortie brute)</span></p>
+      </td>
     </tr>
   <% }) %>
   </tbody>

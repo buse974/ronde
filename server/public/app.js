@@ -30,3 +30,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const fil = document.querySelector('.volet-claude .fil-volet');
   if (fil) fil.scrollTop = fil.scrollHeight;
 });
+
+// Main courante : un clic sur un passage déplie sa réponse sous la ligne (le lien de date ouvre toujours le passage).
+document.addEventListener('DOMContentLoaded', () => {
+  const toggle = (row) => {
+    const detail = document.getElementById(row.dataset.detail);
+    if (!detail) return;
+    const open = detail.hidden;
+    detail.hidden = !open;
+    row.setAttribute('aria-expanded', String(open));
+  };
+  document.querySelectorAll('tr.depliable').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, form')) return;
+      if (window.getSelection()?.toString()) return; // sélection de texte : on ne replie pas
+      toggle(row);
+    });
+    row.addEventListener('keydown', (e) => {
+      if (e.target !== row || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      toggle(row);
+    });
+  });
+});
