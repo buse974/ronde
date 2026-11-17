@@ -457,3 +457,24 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .en-cours { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
 .en-cours p { margin: 0; }
 .arreter { display: flex; gap: 0.75rem; align-items: center; margin-top: 0.6rem; }
+
+/* --- Conversation + panneau latéral ------------------------------------- */
+.echange { display: grid; grid-template-columns: minmax(0, 1fr) 21rem; gap: 2rem; align-items: start; }
+.echange .conversation, .echange .repondre { max-width: none; }
+.volet { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow-y: auto; display: grid; gap: 1rem; margin-top: 1.5rem; }
+.carte { padding: 1rem 1.1rem; border: 1px solid var(--trait); border-radius: 10px; background: var(--nuit-2); }
+.carte.conseillee { border-color: var(--ras); background: color-mix(in srgb, var(--ras) 6%, var(--nuit)); }
+.carte h2 { font-size: var(--step-1); margin: 0 0 0.5rem; }
+.carte p { font-size: var(--step--1); }
+.carte .surtitre { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--brume); margin: 0 0 0.3rem; }
+.carte.conseillee .surtitre { color: var(--ras); }
+.carte details { border: 0; padding: 0; margin: 0 0 0.8rem; }
+.carte pre { max-height: 16rem; overflow: auto; font-size: var(--step--1); }
+.carte .actions { margin-top: 0.4rem; }
+.carte .aide { font-size: var(--step--1); }
+.fiche.serree { font-size: var(--step--1); margin: 0 0 0.8rem; }
+@media (max-width: 960px) {
+  .echange { grid-template-columns: 1fr; gap: 0; }
+  .volet { position: static; max-height: none; overflow: visible; margin: 0 0 1.5rem; }
+}
+.carte code { white-space: nowrap; }

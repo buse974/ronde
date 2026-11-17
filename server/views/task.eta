@@ -20,6 +20,7 @@
 </div>
 
 <% if (it.started === 'busy') { %><p class="note attention">Un passage de cette ronde est déjà en cours.</p><% } %>
+<% if (it.tuned) { %><p class="note">Ronde modifiée. Le prochain passage utilisera la nouvelle version.</p><% } %>
 
 <h3>30 derniers jours</h3>
 <div class="bande" role="img" aria-label="Pire résultat de chaque jour sur 30 jours">

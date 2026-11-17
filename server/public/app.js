@@ -18,3 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
   form.querySelectorAll('input[name=trigger]').forEach((r) => r.addEventListener('change', () => apply(true)));
   apply(false);
 });
+
+// Conversation longue : on arrive au début de la dernière réponse de Claude.
+document.addEventListener('DOMContentLoaded', () => {
+  const last = document.getElementById('derniere');
+  if (last && !location.hash) last.scrollIntoView({ block: 'start' });
+});

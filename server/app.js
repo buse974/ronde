@@ -331,6 +331,16 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/tasks/${id}/edit?kept=1`);
   });
 
+  // Appliquer la ronde modifiée proposée en commentant un passage.
+  app.post('/asks/:id/apply', loadAsk, (req, res) => {
+    const a = req.ask;
+    const task = a.kind === 'tune' && a.task_id ? store.getTask(a.task_id) : null;
+    if (!task || !a.proposal || a.proposal.error) return res.redirect(`/asks/${a.id}`);
+    const { error, ...p } = a.proposal;
+    store.updateTask(task.id, { ...task, name: p.name, prompt: p.prompt, cron: p.cron, allowed_tools: p.allowed_tools, max_turns: p.max_turns, timeout_sec: p.timeout_sec });
+    res.redirect(`/tasks/${task.id}?tuned=1`);
+  });
+
   app.post('/asks/:id/try', loadAsk, (req, res) => {
     const p = req.ask.proposal;
     if (!p) return res.redirect(`/asks/${req.ask.id}`);
@@ -371,6 +381,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       page,
       pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
       started: req.query.started,
+      tuned: req.query.tuned === '1',
     });
   });
 
@@ -410,12 +421,23 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   });
 
   // --- Runs --------------------------------------------------------------
+  // Commenter le résultat d'un passage : Claude explique ou propose de modifier la ronde.
+  app.post('/runs/:id/feedback', (req, res) => {
+    const run = store.getRun(Number(req.params.id));
+    if (!run) return res.status(404).view('error', { message: 'Run introuvable.' });
+    const text = String(req.body.text ?? '').trim().slice(0, 20_000);
+    if (!text) return res.redirect(`/runs/${run.id}`);
+    const started = asks.start('tune', text, mcpAllowedTools(store), { title: `${run.task_name} : ${text}`, taskId: run.task_id, runId: run.id });
+    if (!started) return res.status(409).view('error', { message: 'Claude répond déjà à une autre demande, réessaie dans un instant.' });
+    res.redirect(`/asks/${started.id}`);
+  });
+
   app.get('/runs/:id', (req, res) => {
     const run = store.getRun(Number(req.params.id));
     if (!run) return res.status(404).view('error', { message: 'Run introuvable.' });
     let pretty = null;
     if (run.raw_json) pretty = JSON.stringify(JSON.parse(run.raw_json), null, 2);
-    res.view('run', { run, pretty });
+    res.view('run', { run, pretty, busy: asks.busy });
   });
 
   // Bouton « Arrêter » : coupe claude et tout ce qu'il a lancé.

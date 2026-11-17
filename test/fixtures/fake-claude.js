@@ -32,6 +32,8 @@ process.stdin.on('end', () => {
     case 'suggest': return out({ result: 'Il reste 36 Go libres sur 74 Go (47 %).\n\n```json\n{"ronde": true}\n```' });
     case 'plain': return out({ result: 'Paris.\n\n```json\n{"ronde": false}\n```' });
     case 'designq': return out({ result: 'Je vois 34 IP bannies. À partir de quel pic veux-tu une alerte ?\n\n```json\n{"type": "question"}\n```' });
+    case 'tunea': return out({ result: 'Le disque est à 91 %, au-dessus du seuil de 85 %.\n\n```json\n{"type": "answer"}\n```' });
+    case 'tunep': return out({ result: 'J’ai relevé le seuil à 95 %.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Disque', prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 95 %.', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
     case 'designp': return out({ result: 'Voici ma proposition.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Sécurité SSH', prompt: 'Lis /host-metrics/fail2ban.txt. Réponds RAS si rien.', cron: '5 * * * *', allowed_tools: ['Read'], max_turns: 4 } }) + '\n```' });
     case 'fork':
       // Descendant qui hérite de stdout : sans kill du groupe, « close » n'arrive jamais.

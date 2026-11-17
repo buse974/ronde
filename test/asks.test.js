@@ -41,7 +41,8 @@ describe('Demander à Claude', () => {
     const page = await agent.get(url).set('Host', HOST);
     expect(page.text).toContain('Paris.');
     expect(page.text).not.toContain('json');
-    expect(page.text).not.toContain('créer une ronde');
+    expect(page.text).not.toContain('carte conseillee');
+    expect(page.text).toContain('En faire une ronde');
   });
 
   it('propose d’en faire une ronde, puis conçoit, préremplit et essaie', async () => {
@@ -50,7 +51,7 @@ describe('Demander à Claude', () => {
     const execId = Number(res.headers.location.split('/').pop());
     await asks.drain();
     expect(asks.get(execId)).toMatchObject({ suggest_ronde: true, result: 'Il reste 36 Go libres sur 74 Go (47 %).' });
-    expect((await agent.get(`/asks/${execId}`).set('Host', HOST)).text).toContain('Oui, créer une ronde');
+    expect((await agent.get(`/asks/${execId}`).set('Host', HOST)).text).toContain('carte conseillee');
 
     const design = await form(agent, `/asks/${execId}/to-ronde`);
     const id = Number(design.headers.location.split('/').pop());
@@ -111,5 +112,32 @@ describe('Demander à Claude', () => {
     const second = await form(agent, '/asks', { prompt: 'MODE:ok' });
     expect(second.headers.location).toBe('/tasks?busy=1#demander');
     await asks.drain();
+  });
+
+  it('commente un passage : explique, propose une ronde modifiée et l’applique', async () => {
+    const { agent, asks, store } = await admin();
+    const taskId = store.createTask({ name: 'Disque', prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 85 %.', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 4, timeout_sec: 300, active: true });
+    const runId = Number(store.db.prepare(`INSERT INTO runs (task_id, trigger, status, started_at, result) VALUES (?, 'cron', 'alert', ?, ?)`).run(taskId, new Date().toISOString(), 'Disque à 91 %.').lastInsertRowid);
+
+    expect((await agent.get(`/runs/${runId}`).set('Host', HOST)).text).toContain('Commenter ce résultat');
+
+    const res = await form(agent, `/runs/${runId}/feedback`, { text: 'pourquoi ? MODE:tunea' });
+    const id = Number(res.headers.location.split('/').pop());
+    await asks.drain();
+    expect(asks.get(id)).toMatchObject({ kind: 'tune', status: 'done', task_id: taskId, run_id: runId, proposal: null });
+    const { tunePrompt } = await import('../server/asks.js');
+    const p = tunePrompt({ task: store.getTask(taskId), run: store.getRun(runId), messages: [{ role: 'user', text: 'pourquoi ?' }], timezone: 'Europe/Paris', hostDataDir: '/nope', allowedTools: ['Read'] });
+    expect(p).toContain('RAS sous 85 %');
+    expect(p).toContain('Disque à 91 %.');
+
+    await form(agent, `/asks/${id}/reply`, { text: 'alerte seulement au-dessus de 95 % MODE:tunep' });
+    await asks.drain();
+    expect(asks.get(id)).toMatchObject({ status: 'proposal', proposal: { prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 95 %.' } });
+    expect((await agent.get(`/asks/${id}`).set('Host', HOST)).text).toContain('Appliquer à la ronde');
+
+    const applied = await form(agent, `/asks/${id}/apply`);
+    expect(applied.headers.location).toBe(`/tasks/${taskId}?tuned=1`);
+    expect((await agent.get(applied.headers.location).set('Host', HOST)).text).toContain('Ronde modifiée.');
+    expect(store.getTask(taskId)).toMatchObject({ prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 95 %.', cron: '0 * * * *', active: true });
   });
 });

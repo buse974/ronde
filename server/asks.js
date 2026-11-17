@@ -110,6 +110,53 @@ Conversation jusqu'ici :
 ${transcript}`;
 }
 
+/**
+ * Prompt d'un tour de réglage : l'administrateur commente le résultat d'un
+ * passage d'une ronde existante. Claude explique et, si on le lui demande,
+ * propose une nouvelle version de la ronde.
+ */
+export function tunePrompt({ task, run, messages, timezone, hostDataDir, allowedTools }) {
+  const transcript = messages
+    .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi (tour précédent) : ${m.text}`))
+    .join('\n\n');
+  const cut = (t, n) => (t && t.length > n ? `${t.slice(0, n)}\n[… tronqué]` : t);
+  const runPart = run
+    ? `Passage commenté (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
+<reponse>
+${cut(run.result, 6000) ?? '(aucune réponse)'}
+</reponse>${run.error ? `\nErreur : ${run.error}` : ''}`
+    : '(passage supprimé)';
+  return `Tu aides l'administrateur de « ronde » à comprendre et régler une ronde existante. Une ronde est un prompt que Claude exécute seul, sans personne pour lui répondre, avec \`claude -p\`, sur ce serveur, à heure fixe (cron) ou à la demande. S'il n'y a rien à signaler, la ronde doit répondre exactement « RAS » ; toute autre réponse déclenche une alerte par mail.
+
+La ronde « ${task.name} » :
+- Fréquence : ${task.cron ? `\`${task.cron}\` (fuseau ${timezone})` : 'manuelle'}
+- Outils : ${task.allowed_tools.join(', ') || 'aucun'} ; tours maximum : ${task.max_turns} ; délai : ${task.timeout_sec} s
+- Prompt actuel :
+<prompt>
+${task.prompt}
+</prompt>
+
+${runPart}
+
+Les données du serveur sont lisibles dans /host-metrics avec l'outil Read :
+${hostDataListing(hostDataDir)}
+
+Ta démarche :
+- Si l'administrateur demande pourquoi la ronde a répondu ainsi, explique-le à partir du prompt et des données (relis-les si c'est utile), en citant les chiffres.
+- S'il veut que la ronde se comporte autrement la prochaine fois, propose la ronde modifiée : garde ce qui marche, change seulement ce qui est nécessaire, et dis en une ou deux phrases ce que tu as changé. Outils autorisés : ${allowedTools.join(', ')}.
+- S'il manque une information importante, pose au plus 2 questions courtes.
+
+Réponds en français, de façon concise. Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant soit
+{"type": "answer"}
+soit
+{"type": "proposal", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
+(dans une proposition, reprends tous les champs, y compris ceux qui ne changent pas).
+
+Conversation jusqu'ici :
+
+${transcript}`;
+}
+
 export function createAsks({ db, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
   let busy = false;
@@ -215,7 +262,20 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
   async function runDesignTurn(id) {
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
     const allowed = ask.allowed_tools;
-    const prompt = designPrompt({ messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed });
+    const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed };
+    let prompt;
+    if (ask.kind === 'tune') {
+      const row = q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id);
+      if (!row) {
+        update(id, { status: 'failed', error: 'La ronde a été supprimée.' });
+        return;
+      }
+      const task = { ...row, allowed_tools: JSON.parse(row.allowed_tools) };
+      const run = ask.run_id ? q('SELECT * FROM runs WHERE id = ?').get(ask.run_id) : null;
+      prompt = tunePrompt({ ...ctx, task, run });
+    } else {
+      prompt = designPrompt(ctx);
+    }
     const { r } = await call(id, prompt, ['Read', 'Glob'], 8, DESIGN_TIMEOUT_SEC);
     addUsage(id, r);
     if (r.status === 'failed') {
@@ -227,13 +287,14 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     let proposal = null;
     let proposalError = null;
     if (block?.type === 'proposal' && block.ronde) {
+      const base = ask.kind === 'tune' ? (q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) ?? {}) : {};
       const candidate = {
-        name: block.ronde.name ?? '',
-        prompt: block.ronde.prompt ?? '',
-        cron: block.ronde.cron ?? '',
-        allowed_tools: Array.isArray(block.ronde.allowed_tools) ? block.ronde.allowed_tools : ['Read'],
-        max_turns: block.ronde.max_turns ?? 4,
-        timeout_sec: block.ronde.timeout_sec ?? 300,
+        name: block.ronde.name ?? base.name ?? '',
+        prompt: block.ronde.prompt ?? base.prompt ?? '',
+        cron: block.ronde.cron ?? base.cron ?? '',
+        allowed_tools: Array.isArray(block.ronde.allowed_tools) ? block.ronde.allowed_tools : base.allowed_tools ? JSON.parse(base.allowed_tools) : ['Read'],
+        max_turns: block.ronde.max_turns ?? base.max_turns ?? 4,
+        timeout_sec: block.ronde.timeout_sec ?? base.timeout_sec ?? 300,
         active: true,
       };
       const parsed = taskSchema(config.timezone).safeParse(candidate);
@@ -242,7 +303,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     }
     const messages = [...ask.messages, { role: 'claude', text, proposal: !!proposal }];
     update(id, {
-      status: proposal ? 'proposal' : 'question',
+      status: proposal ? 'proposal' : ask.kind === 'tune' && block?.type === 'answer' ? 'done' : 'question',
       messages: JSON.stringify(messages),
       proposal: proposal ? JSON.stringify({ ...proposal, error: proposalError }) : ask.proposal ? JSON.stringify(ask.proposal) : null,
       error: null,
@@ -274,14 +335,14 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     },
 
     /** Lance une demande. Retourne { id, done } ou null si une demande tourne déjà. */
-    start(kind, text, tools, { raw = false, title = text, history = [] } = {}) {
+    start(kind, text, tools, { raw = false, title = text, history = [], taskId = null, runId = null } = {}) {
       if (busy) return null;
       const now = nowIso();
       const messages = [...history, { role: 'user', text }];
       const id = Number(
         q(
-          `INSERT INTO asks (kind, status, title, allowed_tools, messages, created_at, updated_at) VALUES (?, 'running', ?, ?, ?, ?, ?)`,
-        ).run(kind, title.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), now, now).lastInsertRowid,
+          `INSERT INTO asks (kind, status, title, allowed_tools, messages, task_id, run_id, created_at, updated_at) VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(kind, title.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), taskId, runId, now, now).lastInsertRowid,
       );
       const done = launch(id, () => (kind === 'exec' ? runExec(id, raw) : runDesignTurn(id)));
       // Ménage : on ne garde que les dernières demandes.

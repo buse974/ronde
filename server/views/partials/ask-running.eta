@@ -12,6 +12,6 @@
   </div>
   <form method="post" action="/asks/<%= it.ask.id %>/stop" class="arreter">
     <button type="submit" class="danger compact">Arrêter</button>
-    <span class="petit discret">Coupé automatiquement après <%= it.ask.kind === 'design' ? 4 : 5 %> min.</span>
+    <span class="petit discret">Coupé automatiquement après <%= it.ask.kind === 'exec' ? 5 : 4 %> min.</span>
   </form>
 </div>
