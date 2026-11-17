@@ -1,14 +1,13 @@
-<% const a = it.ask, h = it.h; const titre = a.kind === 'design' ? 'Créer une ronde avec Claude' : a.kind === 'tune' ? 'Régler une ronde avec Claude' : 'Demande'; %>
+<% const a = it.ask, h = it.h; const titre = a.kind === 'design' ? 'Créer une ronde avec Claude' : 'Demande'; %>
 <% layout('./layout', { ...it, title: titre }) %>
 <%
   const running = a.status === 'running';
   const p = a.proposal;
-  // Panneau latéral : ce que la conversation peut devenir.
   const essai = a.title.startsWith('Essai : ');
-  const execFini = a.kind === 'exec' && a.status === 'done' && !essai;
-  const avecVolet = a.kind !== 'exec' || execFini;
+  // Panneau latéral : ce que la conversation peut devenir.
+  const avecVolet = !essai && (a.kind === 'design' || a.status === 'done');
 %>
-<p class="petit"><% if (a.kind === 'tune' && a.task_id) { %><a href="/tasks/<%= a.task_id %>">Retour à la ronde</a><% if (a.run_id) { %> · <a href="/runs/<%= a.run_id %>">Passage commenté</a><% } %><% } else { %><a href="/tasks#demander">Toutes les rondes</a><% } %></p>
+<p class="petit"><a href="/tasks">Toutes les rondes</a></p>
 <h1><%= titre %></h1>
 <% if (it.error) { %><p class="note attention"><%= it.error %></p><% } %>
 
@@ -16,7 +15,8 @@
 <div class="fil">
   <div class="conversation">
     <% a.messages.forEach((m, i) => { const last = i === a.messages.length - 1; %>
-      <div class="bulle <%= m.role === 'user' ? 'moi' : 'claude' %><%= m.role === 'claude' && a.kind === 'exec' && a.is_ras && last ? ' ras' : '' %>"<%~ m.role === 'claude' && last && a.messages.length > 2 ? ' id="derniere"' : '' %>>
+      <% if (m.role === 'history') { if (it.debug) { %><%~ include('./partials/history-entry', { ...it, m }) %><% } return; } %>
+      <div class="bulle <%= m.role === 'user' ? 'moi' : 'claude' %>"<%~ m.role === 'claude' && last && a.messages.length > 2 ? ' id="derniere"' : '' %>>
         <span class="qui"><%= m.role === 'user' ? 'Toi' : 'Claude' %></span>
         <div><%= m.text %></div>
       </div>
@@ -32,7 +32,7 @@
   <% if (!running) { %>
   <form method="post" action="/asks/<%= a.id %>/reply" class="repondre demander-form">
     <label for="reply" class="masque">Continuer la conversation</label>
-    <textarea id="reply" name="text" rows="2" required placeholder="<%= a.kind === 'tune' ? 'Par exemple : ok, mais garde le seuil à 85 %.' : a.kind === 'design' ? (a.status === 'proposal' ? 'Un ajustement ? Par exemple : plutôt toutes les 30 minutes.' : 'Réponds à Claude.') : 'Continuer, par exemple : et sur /boot ?' %>"></textarea>
+    <textarea id="reply" name="text" rows="2" required placeholder="<%= a.kind === 'design' ? (a.status === 'proposal' ? 'Un ajustement ? Par exemple : plutôt toutes les 30 minutes.' : 'Réponds à Claude.') : 'Continuer, par exemple : et sur /boot ?' %>"></textarea>
     <button type="submit" <%= it.busy ? 'disabled' : '' %>>Envoyer</button>
   </form>
   <% } %>
@@ -43,16 +43,11 @@
 <aside class="volet" aria-label="Ce que cette conversation peut devenir">
 
   <% if (a.kind === 'exec') { %>
-  <section class="carte <%= a.suggest_ronde ? 'conseillee' : '' %>">
+  <section class="carte">
     <p class="surtitre">Ronde</p>
-    <% if (a.suggest_ronde) { %>
-      <h2>À surveiller régulièrement</h2>
-      <p>Claude referait cette vérification à intervalle fixe et ne te préviendrait qu'en cas de problème.</p>
-    <% } else { %>
-      <h2>Vérifier ça régulièrement ?</h2>
-      <p>Claude t'aide à fixer la fréquence et les seuils, puis ne te prévient qu'en cas de problème.</p>
-    <% } %>
-    <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" class="<%= a.suggest_ronde ? '' : 'secondaire' %>" <%= it.busy ? 'disabled' : '' %>>En faire une ronde</button></form>
+    <h2><%= a.suggest_ronde ? 'À surveiller régulièrement' : 'Vérifier ça régulièrement ?' %></h2>
+    <p>Claude fixe avec toi la fréquence et les seuils, puis ne te prévient qu'en cas de problème.</p>
+    <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Créer une ronde</button></form>
   </section>
 
   <section class="carte">
@@ -61,14 +56,12 @@
     <p>Garde cette demande pour la relancer en un clic, sans planification ni alerte.</p>
     <form method="post" action="/asks/<%= a.id %>/keep"><button type="submit" class="secondaire">Garder en oneshot</button></form>
   </section>
-  <% } %>
-
-  <% if (a.kind !== 'exec') { %>
-  <section class="carte <%= p ? 'conseillee' : '' %>">
-    <p class="surtitre"><%= a.kind === 'tune' ? 'Ronde modifiée' : 'Ronde proposée' %></p>
-    <% if (!p) { %>
-      <h2><%= a.kind === 'tune' ? 'Aucune modification' : 'En préparation' %></h2>
-      <p class="discret"><%= a.kind === 'tune' ? 'Demande à Claude de changer le comportement de la ronde : sa proposition s’affichera ici.' : 'La ronde s’affichera ici dès que Claude aura assez d’informations.' %></p>
+  <% } else { %>
+  <section class="carte">
+    <p class="surtitre">Ronde proposée</p>
+    <% if (!p || running) { %>
+      <h2>En préparation</h2>
+      <p class="discret">La ronde s’affichera ici dès que Claude aura assez d’informations.</p>
     <% } else { %>
       <h2><%= p.name || 'Sans nom' %></h2>
       <dl class="fiche serree">
@@ -76,18 +69,13 @@
         <dt>Outils</dt><dd><%= (p.allowed_tools || []).join(', ') || 'aucun' %></dd>
         <dt>Tours</dt><dd><%= p.max_turns %> au maximum</dd>
       </dl>
-      <% if (p.error) { %><p class="note attention"><%= a.kind === 'tune' ? 'Proposition invalide' : 'À corriger avant de créer' %> : <%= p.error %></p><% } %>
-      <details <%= a.kind === 'tune' ? 'open' : '' %>><summary><%= a.kind === 'tune' ? 'Nouveau prompt' : 'Prompt de la ronde' %></summary><pre><%= p.prompt %></pre></details>
+      <% if (p.error) { %><p class="note attention">À corriger avant de créer : <%= p.error %>. Demande à Claude d'ajuster.</p><% } %>
+      <details><summary>Prompt de la ronde</summary><pre><%= p.prompt %></pre></details>
       <div class="actions">
-        <% if (a.kind === 'tune') { %>
-          <form method="post" action="/asks/<%= a.id %>/apply"><button type="submit" <%= p.error || running ? 'disabled' : '' %>>Appliquer à la ronde</button></form>
-          <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer d'abord</button></form>
-        <% } else { %>
-          <a href="/tasks/new?from_ask=<%= a.id %>" class="bouton">Ouvrir dans le formulaire</a>
-          <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer</button></form>
-        <% } %>
+        <form method="post" action="/asks/<%= a.id %>/create"><button type="submit" <%= p.error ? 'disabled' : '' %>>Créer la ronde</button></form>
+        <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer</button></form>
       </div>
-      <p class="aide"><%= a.kind === 'tune' ? '« Essayer » lance cette version une fois sans toucher à la ronde. « Appliquer » remplace la ronde actuelle.' : '« Essayer » lance la ronde une fois sans l’enregistrer. Le formulaire te laisse relire avant de créer.' %></p>
+      <p class="aide">« Essayer » la lance une fois sans l’enregistrer. Tu pourras toujours la faire modifier par Claude ensuite.</p>
     <% } %>
   </section>
   <% } %>

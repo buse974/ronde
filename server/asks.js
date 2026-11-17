@@ -45,6 +45,24 @@ function hostDataListing(dir) {
 }
 
 /**
+ * La conversation telle que Claude la relit. Les entrées [Historique] sont écrites par ronde
+ * à chaque création, modification, pause, archivage… : c'est la mémoire fiable de la ronde.
+ */
+export function transcriptOf(messages) {
+  const when = (iso) => String(iso ?? '').slice(0, 16).replace('T', ' ');
+  return messages
+    .map((m) => {
+      if (m.role === 'user') return `Administrateur : ${m.text}`;
+      if (m.role !== 'history') return `Toi (tour précédent) : ${m.text}`;
+      let line = `[Historique ${when(m.at)} UTC, écrit par ronde] ${m.text}`;
+      if (m.prompt_before != null) line += `\nPrompt avant :\n${m.prompt_before}\nPrompt après :\n${m.prompt_after}`;
+      else if (m.after?.prompt) line += `\nPrompt à la création :\n${m.after.prompt}`;
+      return line;
+    })
+    .join('\n\n');
+}
+
+/**
  * Prompt d'une exécution ponctuelle : un court contexte (où Claude tourne,
  * quelles données du serveur il peut lire), puis la demande telle quelle.
  */
@@ -56,11 +74,7 @@ export function whereContext({ hostDataDir, inContainer = true }) {
 }
 
 export function execPrompt({ text, hostDataDir, inContainer = true, tools, history = [] }) {
-  const previous = history.length
-    ? `Échanges précédents de cette conversation :\n\n${history
-        .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi : ${m.text}`))
-        .join('\n\n')}\n\n`
-    : '';
+  const previous = history.length ? `Échanges précédents de cette conversation :\n\n${transcriptOf(history)}\n\n` : '';
   return `Contexte : ${whereContext({ hostDataDir, inContainer })} :
 ${hostDataListing(hostDataDir)}
 Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
@@ -90,9 +104,7 @@ export function visibleText(text) {
 
 /** Prompt d'un tour de conception : consignes, données disponibles, conversation. */
 export function designPrompt({ messages, timezone, hostDataDir, allowedTools }) {
-  const transcript = messages
-    .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi (tour précédent) : ${m.text}`))
-    .join('\n\n');
+  const transcript = transcriptOf(messages);
   return `Tu aides l'administrateur de « ronde » à concevoir une ronde. Une ronde est un prompt que Claude exécutera seul, sans personne pour lui répondre, avec \`claude -p\`, sur ce serveur, à heure fixe (cron) ou à la demande.
 
 Règles d'une ronde :
@@ -106,11 +118,14 @@ Ta démarche :
 1. Si c'est utile, lis les fichiers de ${hostDataDir} pour connaître les valeurs actuelles et proposer des seuils réalistes.
 2. S'il te manque une information importante (seuil, exception connue, fréquence), pose au plus 3 questions courtes.
 3. Sinon, propose la ronde complète et explique tes choix en 2 ou 3 phrases.
+4. Quand l'administrateur valide explicitement ta dernière proposition (« ok », « vas-y », « crée-la »…), crée-la avec l'action « creer », en reprenant cette proposition (avec ses éventuels derniers ajustements). Réponds alors en une phrase claire ce que tu as créé, sans plus. Sans accord explicite, ne crée rien : propose.
 
 Réponds en français, de façon concise. Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant soit
 {"type": "question"}
 soit
 {"type": "proposal", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
+soit
+{"type": "action", "action": "creer", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
 
 Conversation jusqu'ici :
 
@@ -123,9 +138,8 @@ ${transcript}`;
  * propose une nouvelle version de la ronde.
  */
 export function tunePrompt({ task, run, runCommented = true, messages, timezone, hostDataDir, allowedTools }) {
-  const transcript = messages
-    .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi (tour précédent) : ${m.text}`))
-    .join('\n\n');
+  const transcript = transcriptOf(messages);
+  const etat = task.archived_at ? `archivée depuis le ${task.archived_at.slice(0, 10)} (elle ne tourne plus)` : task.active ? 'active' : 'en pause';
   const cut = (t, n) => (t && t.length > n ? `${t.slice(0, n)}\n[… tronqué]` : t);
   const runPart = run
     ? `${runCommented ? 'Passage commenté' : 'Dernier passage'} (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
@@ -136,6 +150,7 @@ ${cut(run.result, 6000) ?? '(aucune réponse)'}
   return `Tu aides l'administrateur de « ronde » à comprendre et régler une ronde existante. Une ronde est un prompt que Claude exécute seul, sans personne pour lui répondre, avec \`claude -p\`, sur ce serveur, à heure fixe (cron) ou à la demande. S'il n'y a rien à signaler, la ronde doit répondre exactement « RAS » ; toute autre réponse déclenche une alerte par mail.
 
 La ronde « ${task.name} » :
+- État : ${etat}
 - Fréquence : ${task.cron ? `\`${task.cron}\` (fuseau ${timezone})` : 'manuelle'}
 - Outils : ${task.allowed_tools.join(', ') || 'aucun'} ; tours maximum : ${task.max_turns} ; délai : ${task.timeout_sec} s
 - Prompt actuel :
@@ -152,19 +167,26 @@ Ta démarche :
 - Si l'administrateur demande pourquoi la ronde a répondu ainsi, explique-le à partir du prompt et des données (relis-les si c'est utile), en citant les chiffres.
 - S'il veut que la ronde se comporte autrement la prochaine fois, propose la ronde modifiée : garde ce qui marche, change seulement ce qui est nécessaire, et dis en une ou deux phrases ce que tu as changé. Outils autorisés : ${allowedTools.join(', ')}.
 - S'il manque une information importante, pose au plus 2 questions courtes.
+- Tu peux agir sur la ronde, mais UNIQUEMENT sur accord explicite de l'administrateur (« ok », « vas-y », « applique », « mets-la en pause », « remets-la active »…), et seulement pour ce qui vient d'être discuté. Actions : « modifier » (applique une version de la ronde, tous les champs repris), « pause », « reprendre », « archiver », « restaurer » (sort des archives ; ajoute "active": true si on te demande aussi de la réactiver). Une ronde archivée ne peut qu'être restaurée.
+- Quand tu agis, dis-le en une phrase claire (« C'est fait : alerte au-dessus de 95 %, /boot ignoré. »), sans roman, sauf si on te demande le détail.
+- Les lignes [Historique] de la conversation sont écrites par ronde : c'est la trace fiable de ce qui a été fait (création, modifications avec le prompt avant / après, pauses, archivage). Appuie-toi dessus pour savoir où en est la ronde ou revenir à une version précédente.
 
 Réponds en français, de façon concise. Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant soit
 {"type": "answer"}
 soit
 {"type": "proposal", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
-(dans une proposition, reprends tous les champs, y compris ceux qui ne changent pas).
+soit
+{"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
+soit
+{"type": "action", "action": "pause"} (ou "reprendre", "archiver", {"type": "action", "action": "restaurer", "active": true})
+(dans une proposition ou une modification, reprends tous les champs, y compris ceux qui ne changent pas).
 
 Conversation jusqu'ici :
 
 ${transcript}`;
 }
 
-export function createAsks({ db, config, claudeAuth, log = console }) {
+export function createAsks({ db, store, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
   let busy = false;
   const inFlight = new Set();
@@ -260,10 +282,56 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
         result: text,
         is_ras: isRas(text) ? 1 : 0,
         suggest_ronde: block?.ronde === true ? 1 : 0,
-        messages: JSON.stringify([...ask.messages, { role: 'claude', text }]),
+        messages: JSON.stringify([...freshMessages(id), { role: 'claude', text }]),
         error: null,
       });
     }
+  }
+
+  /** Messages relus en base : une entrée d'historique a pu s'ajouter pendant que Claude répondait. */
+  const freshMessages = (id) => parse(q('SELECT * FROM asks WHERE id = ?').get(id)).messages;
+
+  /** Une ronde proposée par Claude, complétée par la ronde existante, puis validée. */
+  function candidateOf(ronde, base = {}) {
+    const candidate = {
+      name: ronde.name ?? base.name ?? '',
+      prompt: ronde.prompt ?? base.prompt ?? '',
+      cron: ronde.cron ?? base.cron ?? '',
+      allowed_tools: Array.isArray(ronde.allowed_tools) ? ronde.allowed_tools : base.allowed_tools ? JSON.parse(base.allowed_tools) : ['Read'],
+      max_turns: ronde.max_turns ?? base.max_turns ?? 4,
+      timeout_sec: ronde.timeout_sec ?? base.timeout_sec ?? 300,
+      active: base.active == null ? true : !!base.active,
+      notify: base.notify == null ? true : !!base.notify,
+      run_at: base.run_at ?? null,
+    };
+    const parsed = taskSchema(config.timezone).safeParse(candidate);
+    return parsed.success
+      ? { data: parsed.data }
+      : { data: candidate, error: parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ') };
+  }
+
+  /** Exécute l'action demandée par Claude, avec les mêmes fonctions que les boutons. Lève une erreur lisible. */
+  function executeAction(ask, block) {
+    const row = ask.task_id ? q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) : null;
+    const action = block.action;
+    if (action === 'creer') {
+      if (row) throw new Error('cette conversation a déjà sa ronde.');
+      const { data, error } = candidateOf(block.ronde ?? {});
+      if (error) throw new Error(error);
+      store.createTask(data, { by: 'claude', askId: ask.id });
+      return;
+    }
+    if (!row) throw new Error('aucune ronde rattachée à cette conversation.');
+    if (row.archived_at && action !== 'restaurer') throw new Error('la ronde est archivée : il faut d’abord la restaurer.');
+    if (action === 'modifier') {
+      const { data, error } = candidateOf(block.ronde ?? {}, row);
+      if (error) throw new Error(error);
+      store.updateTask(row.id, data, { by: 'claude' });
+    } else if (action === 'pause') store.setTaskActive(row.id, false, { by: 'claude' });
+    else if (action === 'reprendre') store.setTaskActive(row.id, true, { by: 'claude' });
+    else if (action === 'archiver') store.archiveTask(row.id, { by: 'claude' });
+    else if (action === 'restaurer') store.restoreTask(row.id, { by: 'claude', active: block.active === true });
+    else throw new Error(`action inconnue (${action}).`);
   }
 
   async function runDesignTurn(id) {
@@ -275,7 +343,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     if (ask.task_id) {
       const row = q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id);
       if (!row) {
-        update(id, { status: 'failed', error: 'La ronde a été supprimée.' });
+        update(id, { status: 'failed', error: 'Ronde introuvable.' });
         return;
       }
       const task = { ...row, allowed_tools: JSON.parse(row.allowed_tools) };
@@ -293,29 +361,29 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
       return;
     }
     const block = extractJsonBlock(r.result);
-    const text = stripJsonBlock(r.result) || '(réponse vide)';
+    let text = stripJsonBlock(r.result) || '(réponse vide)';
     let proposal = null;
-    let proposalError = null;
+    let acted = false;
     if (block?.type === 'proposal' && block.ronde) {
       const base = ask.task_id ? (q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) ?? {}) : {};
-      const candidate = {
-        name: block.ronde.name ?? base.name ?? '',
-        prompt: block.ronde.prompt ?? base.prompt ?? '',
-        cron: block.ronde.cron ?? base.cron ?? '',
-        allowed_tools: Array.isArray(block.ronde.allowed_tools) ? block.ronde.allowed_tools : base.allowed_tools ? JSON.parse(base.allowed_tools) : ['Read'],
-        max_turns: block.ronde.max_turns ?? base.max_turns ?? 4,
-        timeout_sec: block.ronde.timeout_sec ?? base.timeout_sec ?? 300,
-        active: true,
-      };
-      const parsed = taskSchema(config.timezone).safeParse(candidate);
-      proposal = parsed.success ? parsed.data : candidate;
-      if (!parsed.success) proposalError = parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ');
+      const { data, error } = candidateOf(block.ronde, base);
+      proposal = { ...data, error: error ?? null };
+    } else if (block?.type === 'action') {
+      try {
+        executeAction(ask, block);
+        acted = true;
+      } catch (err) {
+        // Claude a pu écrire « c'est fait » : le fil ne doit pas mentir.
+        text = `Je n'ai pas pu le faire : ${err.message}`;
+      }
     }
-    const messages = [...ask.messages, { role: 'claude', text, proposal: !!proposal }];
+    const current = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
+    const linked = !!current.task_id;
     update(id, {
-      status: proposal ? 'proposal' : ask.task_id && block?.type === 'answer' ? 'done' : 'question',
-      messages: JSON.stringify(messages),
-      proposal: proposal ? JSON.stringify({ ...proposal, error: proposalError }) : ask.proposal ? JSON.stringify(ask.proposal) : null,
+      status: proposal ? 'proposal' : linked || acted ? 'done' : 'question',
+      messages: JSON.stringify([...current.messages, { role: 'claude', text, ...(proposal ? { proposal: true } : {}) }]),
+      // Après une action, la proposition est appliquée (ou caduque) : on la retire.
+      proposal: proposal ? JSON.stringify(proposal) : acted ? null : current.proposal ? JSON.stringify(current.proposal) : null,
       error: null,
     });
   }
@@ -363,24 +431,19 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     },
 
     /** Suite de la conversation (demande ponctuelle ou conception). Retourne { done } ou { error }. */
-    reply(id, text) {
+    reply(id, text, { kind = null } = {}) {
       const ask = this.get(id);
       if (!ask) return { error: 'Demande introuvable.' };
       if (busy || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
-      update(id, { status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
-      return { done: launch(id, () => (ask.kind === 'exec' && !ask.task_id ? runExec(id, false) : runDesignTurn(id))) };
+      // kind : « design » pour transformer une question en conception de ronde, dans la même conversation.
+      const k = kind ?? ask.kind;
+      update(id, { kind: k, status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
+      return { done: launch(id, () => (k === 'exec' && !ask.task_id ? runExec(id, false) : runDesignTurn(id))) };
     },
 
-    /**
-     * Rattache une conversation à la ronde (ou au oneshot) qu'elle a créée : elle devient
-     * LA conversation de la ronde, à la place de la conversation vide créée avec elle.
-     */
-    link(id, taskId) {
-      db.transaction(() => {
-        q('DELETE FROM asks WHERE task_id = ? AND id != ?').run(taskId, id);
-        update(id, { task_id: taskId, kind: 'tune', proposal: null, suggest_ronde: 0 });
-        q(`UPDATE asks SET status = 'done' WHERE id = ? AND status != 'running'`).run(id);
-      })();
+    /** Retire la proposition affichée (appliquée par le bouton). */
+    clearProposal(id) {
+      q(`UPDATE asks SET proposal = NULL, status = CASE WHEN status = 'running' THEN status ELSE 'done' END WHERE id = ?`).run(id);
     },
 
     /** Conversation de la ronde (une par ronde). */
@@ -424,7 +487,8 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     },
 
     recent(limit = 8) {
-      return q("SELECT * FROM asks WHERE messages != '[]' ORDER BY created_at DESC, id DESC LIMIT ?").all(limit).map(parse);
+      // Demandes libres seulement : celles devenues des rondes se retrouvent sur la page de leur ronde.
+      return q("SELECT * FROM asks WHERE task_id IS NULL AND messages != '[]' ORDER BY created_at DESC, id DESC LIMIT ?").all(limit).map(parse);
     },
 
     recoverOrphans() {

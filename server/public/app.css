@@ -479,13 +479,37 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 }
 .carte code { white-space: nowrap; }
 
-/* --- Panneau « Claude » de la page d'une ronde -------------------------- */
-.echange-ronde { grid-template-columns: minmax(0, 1fr) 24rem; margin-top: 0.5rem; }
-.echange-ronde .volet { margin-top: 0; }
-.volet-claude .fil-volet { margin: 0.6rem 0 0; gap: 0.6rem; }
+/* --- Page d'une ronde : conversation à gauche, pleine hauteur ----------- */
+.ronde-page { display: grid; grid-template-columns: 24rem minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.volet-claude {
+  /* Pleine hauteur, moins l’en-tête du site : tout tient à l’écran dès l’arrivée. */
+  position: sticky; top: 1rem; height: calc(100dvh - 8.5rem); min-height: 26rem;
+  display: flex; flex-direction: column; gap: 0.75rem;
+  padding: 1rem; border: 1px solid var(--trait); border-radius: 10px; background: var(--nuit-2);
+}
+.volet-claude > .surtitre { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--brume); font-size: var(--step--1); margin: 0; }
+.volet-claude .fil-volet { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 0.8rem; }
+.volet-claude .conversation { margin: 0; gap: 0.6rem; max-width: none; }
 .volet-claude .bulle { padding: 0.55rem 0.8rem; font-size: var(--step--1); max-width: 100%; }
 .volet-claude .bulle.moi { margin-left: 1.5rem; }
 .volet-claude .bulle.claude { margin-right: 1.5rem; }
-.saisie-volet { flex-direction: column; align-items: stretch; }
-.saisie-volet textarea { background: var(--nuit-2); }
-@media (max-width: 960px) { .echange-ronde { grid-template-columns: 1fr; } }
+.volet-claude .fil-volet > p { font-size: var(--step--1); }
+.volet-claude .carte { background: var(--nuit); }
+.volet-claude .note { margin: 0; }
+.saisie-volet { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+.saisie-volet textarea { background: var(--nuit); }
+.volet-claude > .petit { margin: 0; }
+.demander h2 + .aide { margin: -0.4rem 0 1rem; }
+@media (max-width: 960px) {
+  .ronde-page { grid-template-columns: 1fr; }
+  .volet-claude { position: static; height: auto; max-height: none; order: 2; }
+  .volet-claude .fil-volet { max-height: 70vh; }
+}
+
+/* --- Historique (mode debug) et archives ------------------------------- */
+.historique { border-left: 2px dashed var(--trait); padding: 0.2rem 0 0.2rem 0.8rem; font-size: var(--step--1); color: var(--brume); }
+.historique .qui { display: block; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.75em; }
+.historique details { border: 0; padding: 0.3rem 0 0; margin: 0; }
+.historique pre { font-size: 0.85em; max-height: 12rem; overflow: auto; margin: 0.3rem 0; }
+.note.archive { border-left-color: var(--brume); }
+.note.archive .actions { margin-top: 0.6rem; }

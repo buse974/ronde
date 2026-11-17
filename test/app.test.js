@@ -78,8 +78,9 @@ describe('tâches', () => {
     await post(agent, `/tasks/${id}/toggle`);
     expect(store.getTask(id).active).toBe(true);
 
-    await post(agent, `/tasks/${id}/delete`);
-    expect(store.getTask(id)).toBeNull();
+    await post(agent, `/tasks/${id}/archive`);
+    expect(store.getTask(id).archived_at).toBeTruthy();
+    expect(store.listTasks().find((t) => t.id === id)).toBeUndefined();
   });
 
   it('échappe le HTML', async () => {

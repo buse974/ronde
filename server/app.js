@@ -25,7 +25,7 @@ import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
 import { classify, runClaude } from './runner.js';
 import { nextRuns, cronError } from './scheduler.js';
-import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema, triggerOf, utcToLocal } from './validation.js';
+import { emailSchema, issuesToErrors, parseTaskForm, parseToolList, setupSchema, taskSchema, triggerOf, utcToLocal } from './validation.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGE_SIZE = 50;
@@ -64,7 +64,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   const h = createHelpers(config.timezone);
   const limiter = createRateLimiter();
   const oauth = createOAuthProvider({ db: store.db });
-  const asks = createAsks({ db: store.db, config, claudeAuth });
+  const asks = createAsks({ db: store.db, store, config, claudeAuth });
   asks.recoverOrphans();
   app.locals.asks = asks;
   const mcp = mcpEndpoint(config);
@@ -80,7 +80,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       'Content-Security-Policy':
         "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; frame-ancestors 'none'; form-action 'self'",
     });
-    res.view = (name, data = {}) => res.send(eta.render(name, { h, user: req.user, path: req.path, timezone: config.timezone, ...data }));
+    res.view = (name, data = {}) =>
+      res.send(eta.render(name, { h, user: req.user, path: req.path, timezone: config.timezone, debug: store.getSetting('debug') === '1', ...data }));
     next();
   });
 
@@ -249,6 +250,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       dial: buildDial({ tasks, recentRuns, timezone: config.timezone }),
       asks: asks.recent(),
       askBusy: asks.busy || req.query.busy === '1',
+      archivedCount: store.countArchived(),
       summary: summarize({ tasks, recentRuns, timezone: config.timezone }),
     });
   });
@@ -282,7 +284,11 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     next();
   };
 
-  app.get('/asks/:id', loadAsk, (req, res) => res.view('ask', { ask: req.ask, busy: asks.busy, live: asks.live(req.ask.id) }));
+  app.get('/asks/:id', loadAsk, (req, res) => {
+    // Conversation d'une ronde : elle vit sur la page de la ronde.
+    if (req.ask.task_id) return res.redirect(`/tasks/${req.ask.task_id}#claude`);
+    res.view('ask', { ask: req.ask, busy: asks.busy, live: asks.live(req.ask.id) });
+  });
 
   app.get('/asks/:id/status', loadAsk, (req, res) => {
     if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
@@ -306,11 +312,20 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   // « En faire une ronde » : conception guidée à partir de la demande et de la réponse.
   app.post('/asks/:id/to-ronde', loadAsk, (req, res) => {
     const a = req.ask;
-    const history = a.messages.map((m) => ({ role: m.role, text: m.text.slice(0, 4000) }));
-    const text = 'Fais-en une ronde.';
-    const started = asks.start('design', text, mcpAllowedTools(store), { title: a.title, history });
-    if (!started) return res.status(409).view('ask', { ask: a, busy: true, error: 'Une demande est déjà en cours.' });
-    res.redirect(`/asks/${started.id}`);
+    const r = asks.reply(a.id, 'Fais-en une ronde.', { kind: 'design' });
+    if (r.error) return res.status(409).view('ask', { ask: a, busy: true, error: r.error });
+    res.redirect(`/asks/${a.id}`);
+  });
+
+  // « Créer la ronde » : la proposition de Claude devient une ronde, la conversation la suit.
+  app.post('/asks/:id/create', loadAsk, (req, res) => {
+    const p = req.ask.proposal;
+    if (!p || p.error || req.ask.task_id) return res.redirect(`/asks/${req.ask.id}`);
+    const { error, ...fields } = p;
+    const parsed = taskSchema(config.timezone).safeParse({ ...fields, active: true, notify: true });
+    if (!parsed.success) return res.status(400).view('ask', { ask: req.ask, busy: asks.busy, error: `Proposition invalide : ${parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ')}` });
+    const id = store.createTask(parsed.data, { by: 'ui', askId: req.ask.id });
+    res.redirect(`/tasks/${id}`);
   });
 
   // « Garder en oneshot » : la demande devient un oneshot relançable en un clic.
@@ -327,18 +342,18 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       active: true,
       notify: false,
       run_at: null,
-    });
-    asks.link(a.id, id);
-    res.redirect(`/tasks/${id}/edit?kept=1`);
+    }, { by: 'ui', askId: a.id });
+    res.redirect(`/tasks/${id}`);
   });
 
   // Appliquer la ronde modifiée proposée en commentant un passage.
   app.post('/asks/:id/apply', loadAsk, (req, res) => {
     const a = req.ask;
     const task = a.task_id ? store.getTask(a.task_id) : null;
-    if (!task || !a.proposal || a.proposal.error) return res.redirect(`/asks/${a.id}`);
+    if (!task || task.archived_at || !a.proposal || a.proposal.error) return res.redirect(`/asks/${a.id}`);
     const { error, ...p } = a.proposal;
-    store.updateTask(task.id, { ...task, name: p.name, prompt: p.prompt, cron: p.cron, allowed_tools: p.allowed_tools, max_turns: p.max_turns, timeout_sec: p.timeout_sec });
+    store.updateTask(task.id, { ...task, name: p.name, prompt: p.prompt, cron: p.cron, allowed_tools: p.allowed_tools, max_turns: p.max_turns, timeout_sec: p.timeout_sec }, { by: 'ui' });
+    asks.clearProposal(a.id);
     res.redirect(`/tasks/${task.id}?tuned=1`);
   });
 
@@ -353,9 +368,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.post('/tasks', (req, res) => {
     const { data, errors, values } = parseTaskForm(req.body, config.timezone);
     if (errors) return res.status(400).view('task-form', { task: null, values, errors, fromAsk: Number(req.body.from_ask) || null });
-    const id = store.createTask(data);
-    const fromAsk = Number(req.body.from_ask);
-    if (fromAsk && asks.get(fromAsk)) asks.link(fromAsk, id);
+    const id = store.createTask(data, { by: 'form', askId: Number(req.body.from_ask) || null });
     res.redirect(`/tasks/${id}`);
   });
 
@@ -413,12 +426,13 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.post('/tasks/:id', loadTask, (req, res) => {
     const { data, errors, values } = parseTaskForm(req.body, config.timezone);
     if (errors) return res.status(400).view('task-form', { task: req.task, values, errors });
-    store.updateTask(req.task.id, data);
+    store.updateTask(req.task.id, data, { by: 'form' });
     res.redirect(`/tasks/${req.task.id}`);
   });
 
   app.post('/tasks/:id/toggle', loadTask, (req, res) => {
-    store.setTaskActive(req.task.id, !req.task.active);
+    if (req.task.archived_at) return res.redirect(`/tasks/${req.task.id}`);
+    store.setTaskActive(req.task.id, !req.task.active, { by: 'ui' });
     if (req.get('HX-Request')) {
       const task = store.listTasks().find((t) => t.id === req.task.id);
       return res.view('partials/task-row', { t: task });
@@ -427,14 +441,23 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   });
 
   app.post('/tasks/:id/run', loadTask, (req, res) => {
+    if (req.task.archived_at) return res.redirect(`/tasks/${req.task.id}`);
     const started = executor.start(req.task, 'manual');
     res.redirect(started ? `/runs/${started.runId}` : `/tasks/${req.task.id}?started=busy`);
   });
 
-  app.post('/tasks/:id/delete', loadTask, (req, res) => {
-    store.deleteTask(req.task.id); // sa conversation part avec elle (ON DELETE CASCADE)
-    res.redirect('/tasks');
+  // On ne supprime jamais : la ronde part aux archives avec sa conversation et ses passages.
+  app.post('/tasks/:id/archive', loadTask, (req, res) => {
+    store.archiveTask(req.task.id, { by: 'ui' });
+    res.redirect(`/tasks/${req.task.id}`);
   });
+
+  app.post('/tasks/:id/restore', loadTask, (req, res) => {
+    store.restoreTask(req.task.id, { by: 'ui', active: req.body.active === '1' });
+    res.redirect(`/tasks/${req.task.id}`);
+  });
+
+  app.get('/archives', (req, res) => res.view('archives', { tasks: store.listTasks({ archived: true }) }));
 
   // --- Runs --------------------------------------------------------------
   // Commenter le résultat d'un passage : Claude explique ou propose de modifier la ronde.
@@ -540,6 +563,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.post('/settings/mcp/grants/:id/revoke', (req, res) => {
     oauth.revokeGrant(req.params.id);
     settingsView(res, { notice: 'Accès MCP révoqué.' });
+  });
+
+  app.post('/settings/debug', (req, res) => {
+    if (req.body.debug === '1') store.setSetting('debug', '1');
+    else store.deleteSetting('debug');
+    settingsView(res, { notice: req.body.debug === '1' ? 'Mode debug activé : l’historique s’affiche dans les conversations.' : 'Mode debug désactivé.' });
   });
 
   app.post('/settings/alerts', (req, res) => {

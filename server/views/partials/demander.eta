@@ -1,10 +1,11 @@
 <section class="demander" id="demander" aria-labelledby="t-demander">
-  <h2 id="t-demander">Demander à Claude</h2>
+  <h2 id="t-demander">Que doit surveiller Claude ?</h2>
+  <p class="aide">Décris ce qui t'inquiète ou pose une question sur ton serveur. Claude te répond, puis t'aide à en faire une ronde ou un oneshot.</p>
   <% if (it.askBusy) { %><p class="note attention">Une demande est déjà en cours. Attends sa réponse avant d'en lancer une autre.</p><% } %>
   <form method="post" action="/asks" class="demander-form">
     <label for="ask-prompt" class="masque">Ta demande</label>
-    <textarea id="ask-prompt" name="prompt" rows="2" required maxlength="20000" placeholder="Combien d'espace disque reste-t-il ?"></textarea>
-    <button type="submit">Envoyer</button>
+    <textarea id="ask-prompt" name="prompt" rows="2" required maxlength="20000" placeholder="Par exemple : préviens-moi si le disque dépasse 85 %."></textarea>
+    <button type="submit">Demander à Claude</button>
   </form>
 
   <% if (it.asks.length) { %>

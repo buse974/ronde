@@ -135,7 +135,7 @@ export function startScheduler({ store, executor, timezone, log = console, now =
     for (const task of store.listDueOnce(new Date(minuteStart + MINUTE - 1).toISOString())) {
       const run = executor.start(task, 'schedule');
       if (!run) continue; // un passage tourne encore : nouvel essai la minute suivante
-      store.setTaskActive(task.id, false);
+      store.setTaskActive(task.id, false, { by: 'scheduler', reason: 'Désactivée automatiquement après son passage unique.' });
       started.push(run);
     }
     return started;

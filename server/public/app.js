@@ -27,6 +27,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Panneau « Claude » d'une ronde : on montre la fin de la conversation.
 document.addEventListener('DOMContentLoaded', () => {
-  const volet = document.querySelector('.volet-claude');
-  if (volet) volet.scrollTop = volet.scrollHeight;
+  const fil = document.querySelector('.volet-claude .fil-volet');
+  if (fil) fil.scrollTop = fil.scrollHeight;
 });

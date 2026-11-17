@@ -111,3 +111,16 @@
     <% } %>
   </div>
 </section>
+
+<section class="reglage" aria-labelledby="r-debug">
+  <div>
+    <h2 id="r-debug">Mode debug</h2>
+    <p>Chaque conversation de ronde garde un historique écrit par ronde : création, modifications (prompt avant / après), pauses, archivage. Claude le relit à chaque message ; il est masqué dans l'interface.</p>
+  </div>
+  <div>
+    <form method="post" action="/settings/debug">
+      <label class="case"><input type="checkbox" name="debug" value="1" class="interrupteur" <%= it.debug ? 'checked' : '' %>> Afficher l'historique dans les conversations</label>
+      <div class="actions"><button type="submit">Enregistrer</button></div>
+    </form>
+  </div>
+</section>

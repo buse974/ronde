@@ -24,9 +24,6 @@
     <% } else { %>
       <p>Une ronde, c'est un prompt que Claude exécute sur ce serveur, à heure fixe ou à la demande. Il répond « RAS » quand tout va bien, sinon tu reçois une alerte.</p>
     <% } %>
-    <div class="actions" style="margin-top:1.5rem">
-      <a href="/tasks/new" class="bouton">Nouvelle ronde</a>
-    </div>
   </div>
 </section>
 
@@ -63,6 +60,7 @@
 </table>
 </div>
 <% } %>
+<% if (it.archivedCount) { %><p class="petit"><a href="/archives">Archives (<%= it.archivedCount %>)</a></p><% } %>
 <% if (it.tasks.length) { %>
 <p class="petit discret">Le coût est un équivalent API indicatif. Avec un token d'abonnement, rien n'est facturé à part : c'est pris sur ton quota.</p>
 <% } %>

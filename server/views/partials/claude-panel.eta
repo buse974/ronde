@@ -1,18 +1,21 @@
 <%
-  // Panneau « Claude » de la page d'une ronde : sa conversation, la ronde modifiée proposée, et la saisie.
+  // Panneau « Claude » de la page d'une ronde : sa conversation (toujours une), la ronde modifiée proposée, la saisie.
   const c = it.conv, h = it.h, t = it.task;
   const running = c && c.status === 'running';
+  const visibles = c ? c.messages.filter((m) => m.role !== 'history') : [];
+  const vide = !visibles.length && !running;
+  const shown = c ? c.messages.filter((m) => m.role !== 'history' || it.debug) : [];
   const p = c && !running ? c.proposal : null;
 %>
-<aside class="volet volet-claude" id="claude" aria-label="Conversation avec Claude sur cette ronde">
-  <div class="carte">
-    <p class="surtitre">Claude</p>
-    <% if (!c || (!c.messages.length && !running)) { %>
-      <h2>Une question sur cette ronde ?</h2>
-      <p class="discret">Demande pourquoi elle a répondu ça, ou ce qu'elle devrait faire autrement. Claude te propose la ronde modifiée, tu l'appliques si elle te convient.</p>
+<aside class="volet-claude" id="claude" aria-label="Conversation avec Claude sur cette ronde">
+  <p class="surtitre">Claude</p>
+  <div class="fil-volet">
+    <% if (vide && !shown.length) { %>
+      <p class="discret">Demande pourquoi elle a répondu ça, ou ce qu'elle devrait faire autrement : Claude te propose la ronde modifiée, tu l'appliques si elle te convient.</p>
     <% } else { %>
-      <div class="conversation fil-volet">
-        <% c.messages.forEach((m) => { %>
+      <div class="conversation">
+        <% shown.forEach((m) => { %>
+          <% if (m.role === 'history') { %><%~ include('./history-entry', { ...it, m }) %><% return; } %>
           <div class="bulle <%= m.role === 'user' ? 'moi' : 'claude' %>">
             <span class="qui"><%= m.role === 'user' ? 'Toi' : 'Claude' %></span>
             <div><%= m.text %></div>
@@ -22,33 +25,33 @@
       </div>
       <% if (c.status === 'failed') { %><p class="note mal"><%= c.error %></p><% } %>
     <% } %>
-    <% if (it.convError) { %><p class="note attention"><%= it.convError %></p><% } %>
+
+    <% if (p) { %>
+    <section class="carte modif">
+      <p class="surtitre">Ronde modifiée</p>
+      <dl class="fiche serree">
+        <dt>Nom</dt><dd><%= p.name %></dd>
+        <dt>Quand</dt><dd><%= p.cron ? h.cronText(p.cron) : 'À la demande' %><% if (p.cron) { %><br><code><%= p.cron %></code><% } %></dd>
+        <dt>Outils</dt><dd><%= (p.allowed_tools || []).join(', ') || 'aucun' %></dd>
+        <dt>Tours</dt><dd><%= p.max_turns %> au maximum</dd>
+      </dl>
+      <% if (p.error) { %><p class="note attention">Proposition invalide : <%= p.error %></p><% } %>
+      <details><summary>Nouveau prompt</summary><pre><%= p.prompt %></pre></details>
+      <div class="actions">
+        <form method="post" action="/asks/<%= c.id %>/apply"><button type="submit" <%= p.error || t.archived_at ? 'disabled' : '' %>>Appliquer</button></form>
+        <form method="post" action="/asks/<%= c.id %>/try"><button type="submit" class="secondaire" <%= it.askBusy ? 'disabled' : '' %>>Essayer d'abord</button></form>
+      </div>
+    </section>
+    <% } %>
   </div>
 
-  <% if (p) { %>
-  <section class="carte conseillee">
-    <p class="surtitre">Ronde modifiée</p>
-    <h2><%= p.name %></h2>
-    <dl class="fiche serree">
-      <dt>Quand</dt><dd><%= p.cron ? h.cronText(p.cron) : 'À la demande' %><% if (p.cron) { %><br><code><%= p.cron %></code><% } %></dd>
-      <dt>Outils</dt><dd><%= (p.allowed_tools || []).join(', ') || 'aucun' %></dd>
-      <dt>Tours</dt><dd><%= p.max_turns %> au maximum</dd>
-    </dl>
-    <% if (p.error) { %><p class="note attention">Proposition invalide : <%= p.error %></p><% } %>
-    <details open><summary>Nouveau prompt</summary><pre><%= p.prompt %></pre></details>
-    <div class="actions">
-      <form method="post" action="/asks/<%= c.id %>/apply"><button type="submit" <%= p.error ? 'disabled' : '' %>>Appliquer à la ronde</button></form>
-      <form method="post" action="/asks/<%= c.id %>/try"><button type="submit" class="secondaire" <%= it.askBusy ? 'disabled' : '' %>>Essayer d'abord</button></form>
-    </div>
-  </section>
-  <% } %>
-
+  <% if (it.convError) { %><p class="note attention"><%= it.convError %></p><% } %>
   <% if (!running) { %>
   <form method="post" action="/tasks/<%= t.id %>/ask" class="demander-form saisie-volet">
     <label for="claude-text" class="masque">Écrire à Claude</label>
-    <textarea id="claude-text" name="text" rows="3" required placeholder="<%= c && c.messages.length ? 'Par exemple : ignore /boot la prochaine fois.' : 'Par exemple : pourquoi cette alerte ce matin ?' %>"></textarea>
+    <textarea id="claude-text" name="text" rows="3" required placeholder="<%= t.archived_at ? 'Par exemple : remets-la active.' : vide ? 'Par exemple : pourquoi cette alerte ce matin ?' : 'Par exemple : ok, applique.' %>"></textarea>
     <button type="submit" <%= it.askBusy ? 'disabled' : '' %>>Envoyer</button>
   </form>
-  <% if (c && c.messages.length) { %><p class="petit discret">Coût de la conversation : <%= h.cost(c.cost_usd) %>. <a href="/asks/<%= c.id %>">Plein écran</a></p><% } %>
+  <% if (!vide) { %><p class="petit discret">Coût de la conversation : <%= h.cost(c.cost_usd) %>.</p><% } %>
   <% } %>
 </aside>

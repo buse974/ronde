@@ -1,12 +1,15 @@
 <% layout('./layout', { ...it, title: it.task.name }) %>
 <% const t = it.task, h = it.h; %>
-<p class="petit"><a href="/tasks">Toutes les rondes</a></p>
+<div class="ronde-page">
+<%~ include('./partials/claude-panel', it) %>
+<div class="ronde-centre">
+<p class="petit"><% if (t.archived_at) { %><a href="/archives">Archives</a><% } else { %><a href="/tasks">Toutes les rondes</a><% } %></p>
 <div class="tete-ronde">
   <div>
     <h1><%= t.name %></h1>
     <p>
       <% if (t.cron) { %><%= h.cronText(t.cron) %> <span class="discret">(<code><%= t.cron %></code>)</span>.
-        <% if (t.active) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } else { %><span class="pastille">En pause</span><% } %>
+        <% if (t.archived_at) { %><span class="pastille">Archivée</span><% } else if (t.active) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } else { %><span class="pastille">En pause</span><% } %>
       <% } else if (t.run_at) { %><%= h.triggerText(t) %>.<% if (!t.active) { %> <span class="pastille">Passé</span><% } %>
       <% } else { %>Oneshot, lancé à la main.<% } %>
       <% if (!t.notify) { %> <span class="pastille">Sans alerte mail</span><% } %>
@@ -14,16 +17,21 @@
     </p>
   </div>
   <div class="actions">
-    <form method="post" action="/tasks/<%= t.id %>/run"><button type="submit">Lancer maintenant</button></form>
-    <a href="/tasks/<%= t.id %>/edit" class="bouton secondaire">Modifier</a>
+    <% if (!t.archived_at) { %><form method="post" action="/tasks/<%= t.id %>/run"><button type="submit">Lancer maintenant</button></form><% } %>
   </div>
 </div>
 
+<% if (t.archived_at) { %>
+<div class="note archive">
+  <p><strong>Archivée le <%= h.short(t.archived_at) %>.</strong> Elle ne tourne plus ; sa conversation et ses passages sont conservés. Demande à Claude de la remettre en service, ou :</p>
+  <div class="actions">
+    <form method="post" action="/tasks/<%= t.id %>/restore"><input type="hidden" name="active" value="1"><button type="submit">Restaurer et réactiver</button></form>
+    <form method="post" action="/tasks/<%= t.id %>/restore"><button type="submit" class="secondaire">Restaurer en pause</button></form>
+  </div>
+</div>
+<% } %>
 <% if (it.started === 'busy') { %><p class="note attention">Un passage de cette ronde est déjà en cours.</p><% } %>
 <% if (it.tuned) { %><p class="note">Ronde modifiée. Le prochain passage utilisera la nouvelle version.</p><% } %>
-
-<div class="echange echange-ronde">
-<div class="fil">
 
 <h3>30 derniers jours</h3>
 <div class="bande" role="img" aria-label="Pire résultat de chaque jour sur 30 jours">
@@ -41,7 +49,7 @@
 
 <div class="titre-section"><h2>Main courante</h2></div>
 <% if (!it.runs.length) { %>
-<p class="vide">Aucun passage pour l'instant. Lance la ronde pour voir sa première réponse.</p>
+<p class="vide">Aucun passage pour l'instant.<% if (!t.archived_at) { %> Lance la ronde pour voir sa première réponse.<% } %></p>
 <% } else { %>
 <div class="defile">
 <table class="registre">
@@ -95,14 +103,15 @@
   <p>Outils : <%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %>. Tours maximum : <%= t.max_turns %>. Délai maximum : <%= t.timeout_sec %> s.</p>
   <pre><%= t.prompt %></pre>
 </details>
+<% if (!t.archived_at) { %>
 <details class="zone-danger">
-  <summary>Supprimer la ronde</summary>
-  <form method="post" action="/tasks/<%= t.id %>/delete">
-    <p>La ronde et toute sa main courante seront supprimées.</p>
-    <button type="submit" class="danger">Supprimer définitivement</button>
+  <summary>Archiver la ronde</summary>
+  <form method="post" action="/tasks/<%= t.id %>/archive">
+    <p>Elle ne tournera plus. Sa conversation et ses passages restent consultables dans les archives, et tu pourras la remettre en service.</p>
+    <button type="submit" class="danger">Archiver</button>
   </form>
 </details>
+<% } %>
 </div>
 </div>
-<%~ include('./partials/claude-panel', it) %>
 </div>

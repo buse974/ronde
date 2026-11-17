@@ -1,0 +1,10 @@
+<% const m = it.m; %>
+<div class="historique" title="Visible en mode debug uniquement">
+  <span class="qui">Historique · <%= it.h.short(m.at) %></span>
+  <div><%= m.text %></div>
+  <% if (m.prompt_before != null) { %>
+  <details><summary>Prompt avant / après</summary><pre><%= m.prompt_before %></pre><pre><%= m.prompt_after %></pre></details>
+  <% } else if (m.after && m.after.prompt) { %>
+  <details><summary>Prompt à la création</summary><pre><%= m.after.prompt %></pre></details>
+  <% } %>
+</div>

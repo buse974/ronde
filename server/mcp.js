@@ -143,7 +143,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       },
       async ({ id }) => {
         const t = store.getTask(id);
-        if (!t) return fail(`Ronde #${id} introuvable.`);
+        if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée)' : ''}.`);
         return ok({
           ...summary({ ...t, ...store.listTasks().find((x) => x.id === id) }),
           prompt: t.prompt,
@@ -262,7 +262,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       async (args) => {
         const { data, error } = validate(args);
         if (error) return fail(error);
-        const id = store.createTask({ ...data, created_via: 'mcp' });
+        const id = store.createTask({ ...data, created_via: 'mcp' }, { by: 'mcp' });
         return ok({ cree: true, ...summary(store.listTasks().find((t) => t.id === id)) });
       },
     );
@@ -276,7 +276,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       },
       async ({ id, ...changes }) => {
         const t = store.getTask(id);
-        if (!t) return fail(`Ronde #${id} introuvable.`);
+        if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée : restaure-la dans ronde)' : ''}.`);
         // Une ronde qui utilise des outils hors politique MCP (ajoutés dans l'interface) est
         // verrouillée : la modifier via MCP permettrait de détourner ces outils avec un autre prompt.
         const locked = forbiddenRules(t.allowed_tools, mcpAllowedTools(store));
@@ -286,7 +286,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
         const merged = { ...t, ...Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined)) };
         const { data, error } = validate(merged);
         if (error) return fail(error);
-        store.updateTask(id, data);
+        store.updateTask(id, data, { by: 'mcp' });
         return ok({ modifie: true, ...summary(store.listTasks().find((x) => x.id === id)) });
       },
     );
@@ -295,8 +295,9 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       'set_active',
       { title: 'Activer / désactiver', description: 'Active ou désactive une ronde planifiée.', inputSchema: { id: z.number().int(), active: z.boolean() } },
       async ({ id, active }) => {
-        if (!store.getTask(id)) return fail(`Ronde #${id} introuvable.`);
-        store.setTaskActive(id, active);
+        const t = store.getTask(id);
+        if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée)' : ''}.`);
+        store.setTaskActive(id, active, { by: 'mcp' });
         return ok({ id, active });
       },
     );
@@ -310,7 +311,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       },
       async ({ id, attendre }) => {
         const t = store.getTask(id);
-        if (!t) return fail(`Ronde #${id} introuvable.`);
+        if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée)' : ''}.`);
         const started = executor.start(t, 'manual');
         if (!started) return fail('Un run de cette ronde est déjà en cours.');
         if (!attendre) return ok({ run_id: started.runId, statut: 'running', url: h(`/runs/${started.runId}`) });

@@ -1,0 +1,24 @@
+<% layout('./layout', { ...it, title: 'Archives' }) %>
+<% const h = it.h; %>
+<p class="petit"><a href="/tasks">Toutes les rondes</a></p>
+<h1>Archives</h1>
+<p>Les rondes archivées ne tournent plus. Leur conversation et leurs passages sont conservés : ouvre-en une pour la consulter, ou demande à Claude de la remettre en service.</p>
+<% if (!it.tasks.length) { %>
+<p class="vide">Aucune ronde archivée.</p>
+<% } else { %>
+<div class="defile">
+<table class="registre">
+  <thead><tr><th>Ronde</th><th class="masque-mobile">Fréquence</th><th>Dernier résultat</th><th>Archivée</th></tr></thead>
+  <tbody>
+  <% it.tasks.forEach((t) => { %>
+    <tr>
+      <td><a href="/tasks/<%= t.id %>"><strong><%= t.name %></strong></a></td>
+      <td class="masque-mobile"><%= t.cron ? h.cronText(t.cron) : 'Oneshot' %></td>
+      <td><% if (t.last_status) { %><span class="etat <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></span> <span class="petit discret"><%= h.ago(t.last_started_at) %></span><% } else { %><span class="discret">aucun passage</span><% } %></td>
+      <td class="petit"><%= h.short(t.archived_at) %></td>
+    </tr>
+  <% }) %>
+  </tbody>
+</table>
+</div>
+<% } %>

@@ -94,7 +94,7 @@ describe('interface', () => {
     await asks.drain();
     expect((await agent.get(`/asks/${askId}`).set('Host', HOST)).text).toContain('Garder en oneshot');
     const kept = await form(agent, `/asks/${askId}/keep`);
-    expect(kept.headers.location).toMatch(/^\/tasks\/\d+\/edit\?kept=1$/);
+    expect(kept.headers.location).toMatch(/^\/tasks\/\d+$/);
     const t = store.getTask(Number(kept.headers.location.split('/')[2]));
     expect(t).toMatchObject({ cron: '', run_at: null, notify: false, allowed_tools: ['Read', 'Grep', 'Glob'] });
     expect(t.prompt).toContain('point Docker ?');
