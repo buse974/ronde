@@ -12,7 +12,7 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div class="page">
+  <div class="page<%= it.large ? ' large' : '' %>">
     <header class="entete">
       <a href="/" class="marque"><%~ include('./partials/embleme', {}) %>ronde</a>
       <% if (it.user) { %>

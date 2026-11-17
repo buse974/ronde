@@ -8,7 +8,8 @@
     <form method="dialog"><button type="submit" class="secondaire compact" aria-label="Fermer">Fermer</button></form>
   </div>
   <dl class="fiche">
-    <dt>État</dt><dd><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></dd>
+    <dt>Type</dt><dd><span class="type <%= t.cron || t.run_at ? 'ronde' : 'oneshot' %>"><%= t.cron || t.run_at ? 'Ronde' : 'Oneshot' %></span></dd>
+    <dt>État</dt><dd><span class="etat-ronde <%= t.archived_at ? 'archivee' : t.active ? 'active' : 'pause' %>"><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></span></dd>
     <dt>Déclenchement</dt><dd><% if (t.cron) { %><%= h.cronText(t.cron) %> <code><%= t.cron %></code><% if (t.active && !t.archived_at) { %><br><span class="discret">Prochain passage : <%= h.nextRun(t.cron) %></span><% } %><% } else if (t.run_at) { %><%= h.triggerText(t) %><% } else { %>À la demande (oneshot)<% } %></dd>
     <dt>Alerte mail</dt><dd><% if (!t.notify) { %>Non : simple réponse, pas de mail<% } else if (it.alertEmail) { %>Si la réponse n'est pas « RAS » ou en cas d'échec, à <strong><%= it.alertEmail %></strong><% } else { %>Activée, mais aucun destinataire : <a href="/settings#r-alertes">à régler</a><% } %></dd>
     <dt>Outils</dt><dd><%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %></dd>

@@ -74,9 +74,9 @@ describe('interface', () => {
     store.createTask(task({ name: 'Ronde horaire', cron: '0 * * * *' }));
     store.createTask(task({ name: 'Point Docker', cron: '', notify: false }));
     const page = (await agent.get('/tasks').set('Host', HOST)).text;
-    expect(page).toContain('<h2>Oneshots</h2>');
-    expect(page.indexOf('Ronde horaire')).toBeLessThan(page.indexOf('<h2>Oneshots</h2>'));
-    expect(page.indexOf('Point Docker')).toBeGreaterThan(page.indexOf('<h2>Oneshots</h2>'));
+    expect(page).toContain('<h2 class="genre oneshot">Oneshots</h2>');
+    expect(page.indexOf('Ronde horaire')).toBeLessThan(page.indexOf('<h2 class="genre oneshot">Oneshots</h2>'));
+    expect(page.indexOf('Point Docker')).toBeGreaterThan(page.indexOf('<h2 class="genre oneshot">Oneshots</h2>'));
   });
 
   it('crée une ronde « une seule fois » depuis le formulaire', async () => {

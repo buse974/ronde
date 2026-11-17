@@ -30,6 +30,9 @@
   --alerte: #f2b441;
   --echec: #ef6461;
   --cours: #8fb2ff;
+  /* Genres : une ronde (planifiée) et un oneshot (relancé à la main). */
+  --ronde: #a98bff;
+  --oneshot: #f08ad6;
 
   --font: 'Archivo', system-ui, sans-serif;
   --step--1: 0.84rem;
@@ -538,3 +541,43 @@ dialog.config-ronde::backdrop { background: rgb(0 0 0 / 0.55); }
 .config-ronde details { border: 0; padding: 0; margin: 0; }
 .config-ronde pre { max-height: 22rem; overflow: auto; }
 button.lien { background: none; border: 0; padding: 0; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* --- Largeur : pages avec le panneau Claude ------------------------------ */
+.page.large { max-width: 1440px; }
+
+/* --- Couleurs : genre et état d'une ronde -------------------------------- */
+.type, .etat-ronde {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  font-size: var(--step--1); font-weight: 650; font-stretch: 85%; letter-spacing: 0.02em;
+  padding: 0.12rem 0.6rem; border-radius: 999px; white-space: nowrap;
+}
+.type.ronde { color: var(--ronde); background: color-mix(in srgb, var(--ronde) 14%, transparent); }
+.type.oneshot { color: var(--oneshot); background: color-mix(in srgb, var(--oneshot) 14%, transparent); }
+.etat-ronde::before { content: ''; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; }
+.etat-ronde.active { color: var(--ras); }
+.etat-ronde.pause { color: var(--brume); }
+.etat-ronde.pause::before { background: transparent; border: 1.5px solid currentColor; }
+.etat-ronde.archivee { color: var(--brume-2); }
+.badges { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0 0 0.4rem; }
+.tete-ronde .badges { color: inherit; }
+
+/* Titres de section et lignes de la liste, au fil de la couleur du genre. */
+h2.genre { display: inline-flex; align-items: center; gap: 0.6rem; }
+h2.genre::before { content: ''; width: 0.7rem; height: 0.7rem; border-radius: 3px; }
+h2.genre.ronde::before { background: var(--ronde); }
+h2.genre.oneshot::before { background: var(--oneshot); }
+.liste-ronde td.nom { box-shadow: inset 3px 0 0 var(--ronde); }
+.liste-oneshot td.nom { box-shadow: inset 3px 0 0 var(--oneshot); }
+.registre tr.endormie td.nom { box-shadow: inset 3px 0 0 var(--trait); }
+
+/* Panneau d'une demande : la carte Ronde et la carte Oneshot. */
+.carte.genre-ronde { border-top: 3px solid var(--ronde); }
+.carte.genre-ronde .surtitre { color: var(--ronde); }
+.carte.genre-oneshot { border-top: 3px solid var(--oneshot); }
+.carte.genre-oneshot .surtitre { color: var(--oneshot); }
+
+/* Panneau Claude : son nom en couleur, la proposition en accent. */
+.volet-claude > .surtitre { color: var(--cours); }
+.volet-claude .carte.modif { border-left: 3px solid var(--ronde); }
+.volet-claude .carte.modif .surtitre { color: var(--ronde); }
+.volet-claude .bulle.moi { border-color: color-mix(in srgb, var(--cours) 35%, var(--trait)); }

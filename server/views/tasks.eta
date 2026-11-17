@@ -35,9 +35,9 @@
 
 <% const planifiees = it.tasks.filter((t) => t.cron || t.run_at), oneshots = it.tasks.filter((t) => !t.cron && !t.run_at); %>
 <% if (planifiees.length) { %>
-<div class="titre-section"><h2>Rondes</h2></div>
+<div class="titre-section"><h2 class="genre ronde">Rondes</h2></div>
 <div class="defile">
-<table class="registre">
+<table class="registre liste-ronde">
   <thead>
     <tr><th>Ronde</th><th class="masque-mobile">Fréquence</th><th class="masque-mobile">Prochain passage</th><th>Dernier résultat</th><th class="masque-mobile chiffre">Coût 30 j</th><th class="fin"><span class="discret">Active</span></th></tr>
   </thead>
@@ -48,9 +48,9 @@
 </div>
 <% } %>
 <% if (oneshots.length) { %>
-<div class="titre-section" style="margin-top:2.5rem"><h2>Oneshots</h2></div>
+<div class="titre-section" style="margin-top:2.5rem"><h2 class="genre oneshot">Oneshots</h2></div>
 <div class="defile">
-<table class="registre">
+<table class="registre liste-oneshot">
   <thead>
     <tr><th>Oneshot</th><th>Dernière réponse</th><th class="masque-mobile chiffre">Coût 30 j</th><th class="fin"></th></tr>
   </thead>

@@ -1,15 +1,16 @@
-<% layout('./layout', { ...it, title: it.task.name }) %>
-<% const t = it.task, h = it.h; %>
+<% layout('./layout', { ...it, title: it.task.name, large: true }) %>
+<% const t = it.task, h = it.h; const genre = t.cron || t.run_at ? 'ronde' : 'oneshot'; %>
 <div class="ronde-page">
 <%~ include('./partials/claude-panel', it) %>
 <div class="ronde-centre">
 <p class="petit"><% if (t.archived_at) { %><a href="/archives">Archives</a><% } else { %><a href="/tasks">Toutes les rondes</a><% } %></p>
 <div class="tete-ronde">
   <div>
+    <p class="badges"><span class="type <%= genre %>"><%= genre === 'ronde' ? (t.run_at && !t.cron ? 'Ronde · une fois' : 'Ronde') : 'Oneshot' %></span><span class="etat-ronde <%= t.archived_at ? 'archivee' : t.active ? 'active' : 'pause' %>"><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></span></p>
     <h1><%= t.name %></h1>
     <p>
       <% if (t.cron) { %><%= h.cronText(t.cron) %> <span class="discret">(<code><%= t.cron %></code>)</span>.
-        <% if (t.archived_at) { %><span class="pastille">Archivée</span><% } else if (t.active) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } else { %><span class="pastille">En pause</span><% } %>
+        <% if (t.active && !t.archived_at) { %>Prochain passage : <%= h.nextRun(t.cron) %>.<% } %>
       <% } else if (t.run_at) { %><%= h.triggerText(t) %>.<% if (!t.active) { %> <span class="pastille">Passé</span><% } %>
       <% } else { %>Oneshot, lancé à la main.<% } %>
       <% if (!t.notify) { %> <span class="pastille">Sans alerte mail</span><% } %>

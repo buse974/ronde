@@ -43,21 +43,21 @@
 <aside class="volet" aria-label="Ce que cette conversation peut devenir">
 
   <% if (a.kind === 'exec') { %>
-  <section class="carte">
+  <section class="carte genre-ronde">
     <p class="surtitre">Ronde</p>
     <h2><%= a.suggest_ronde ? 'À surveiller régulièrement' : 'Vérifier ça régulièrement ?' %></h2>
     <p>Claude fixe avec toi la fréquence et les seuils, puis ne te prévient qu'en cas de problème.</p>
     <form method="post" action="/asks/<%= a.id %>/to-ronde"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Créer une ronde</button></form>
   </section>
 
-  <section class="carte">
+  <section class="carte genre-oneshot">
     <p class="surtitre">Oneshot</p>
     <h2>Reposer la question plus tard</h2>
     <p>Garde cette demande pour la relancer en un clic, sans planification ni alerte.</p>
     <form method="post" action="/asks/<%= a.id %>/keep"><button type="submit" class="secondaire">Garder en oneshot</button></form>
   </section>
   <% } else { %>
-  <section class="carte">
+  <section class="carte genre-ronde">
     <p class="surtitre">Ronde proposée</p>
     <% if (!p || running) { %>
       <h2>En préparation</h2>

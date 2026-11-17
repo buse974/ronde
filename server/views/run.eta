@@ -1,4 +1,4 @@
-<% layout('./layout', { ...it, title: 'Passage du ' + it.h.short(it.run.started_at) }) %>
+<% layout('./layout', { ...it, title: 'Passage du ' + it.h.short(it.run.started_at), large: true }) %>
 <% const r = it.run, h = it.h; %>
 <div class="ronde-page">
 <%~ include('./partials/claude-panel', it) %>

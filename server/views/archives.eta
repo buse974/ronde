@@ -12,7 +12,7 @@
   <tbody>
   <% it.tasks.forEach((t) => { %>
     <tr>
-      <td><a href="/tasks/<%= t.id %>"><strong><%= t.name %></strong></a></td>
+      <td><a href="/tasks/<%= t.id %>"><strong><%= t.name %></strong></a> <span class="type <%= t.cron || t.run_at ? 'ronde' : 'oneshot' %>"><%= t.cron || t.run_at ? 'Ronde' : 'Oneshot' %></span></td>
       <td class="masque-mobile"><%= t.cron ? h.cronText(t.cron) : 'Oneshot' %></td>
       <td><% if (t.last_status) { %><span class="etat <%= t.last_status %>"><%= h.statusLabel(t.last_status) %></span> <span class="petit discret"><%= h.ago(t.last_started_at) %></span><% } else { %><span class="discret">aucun passage</span><% } %></td>
       <td class="petit"><%= h.short(t.archived_at) %></td>
