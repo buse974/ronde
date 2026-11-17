@@ -43,13 +43,10 @@ Le port **3000** doit être libre, ou il faut changer le mapping dans `docker-co
 git clone https://github.com/buse974/ronde.git
 cd ronde
 cp .env.example .env        # facultatif : ronde démarre sans .env
-docker compose up -d
+docker compose up -d --build
 ```
 
-Deux possibilités pour l'image :
-
-- **`docker compose up -d`** télécharge l'image publiée `ghcr.io/buse974/ronde:latest` si elle est disponible.
-- **`docker compose up -d --build`** construit l'image localement depuis les sources. La version du CLI Claude Code embarqué est fixée par l'argument `CLAUDE_CODE_VERSION` (`latest` par défaut) :
+L'image est construite sur ton serveur depuis les sources : aucune image n'est publiée sur un registre. La version du CLI Claude Code embarqué est fixée par l'argument `CLAUDE_CODE_VERSION` (`latest` par défaut) :
 
   ```bash
   docker compose build --build-arg CLAUDE_CODE_VERSION=2.1.0
@@ -325,26 +322,16 @@ journalctl -u ronde-metrics.service -n 20     # dernières exécutions
 
 ## 10. Mise à jour
 
-Avec l'image publiée :
-
 ```bash
 cd /chemin/vers/ronde
-git pull                      # scripts host/ et docker-compose.yml à jour
-docker compose pull
-docker compose up -d
-docker image prune -f
-```
-
-Avec un build local :
-
-```bash
 git pull
 docker compose up -d --build
+docker image prune -f
 ```
 
 - **Migrations :** elles s'appliquent toutes seules au démarrage (`server/migrations/`, version suivie par `PRAGMA user_version`). Fais une [sauvegarde](#11-sauvegarde-et-restauration) avant une mise à jour.
 - **Runs interrompus :** un run en cours pendant le redémarrage est marqué en échec au démarrage suivant (« run(s) interrompu(s) » dans les logs).
-- **Version de Claude Code :** le CLI est figé dans l'image. Pour le mettre à jour, reconstruis l'image, ou attends une nouvelle image publiée.
+- **Version de Claude Code :** le CLI est figé dans l'image. Pour le mettre à jour, reconstruis l'image (`docker compose build --no-cache`).
 
 ## 11. Sauvegarde et restauration
 

@@ -1,10 +1,10 @@
 # Installation auto-hébergée :
-#   docker compose up -d
+#   docker compose up -d --build
 #   docker compose logs ronde   # code d'installation, à saisir sur http://<serveur>:3000/setup
 services:
   ronde:
     build: .
-    image: ghcr.io/buse974/ronde:latest
+    image: ronde:local
     container_name: ronde
     restart: unless-stopped
     ports:
