@@ -53,3 +53,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+// Boutons qui ouvrent une popup (<dialog>) : data-ouvre="id".
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ouvre]');
+  if (!b) return;
+  document.getElementById(b.dataset.ouvre)?.showModal();
+});
+// Clic sur le fond (hors du cadre de la popup) : on ferme.
+document.addEventListener('click', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDialogElement) || !d.open) return;
+  const r = d.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close();
+});

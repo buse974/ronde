@@ -151,6 +151,9 @@ describe('Demander à Claude', () => {
     const taskId = store.createTask({ name: 'Disque', prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 85 %.', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 4, timeout_sec: 300, active: true });
     const runId = Number(store.db.prepare(`INSERT INTO runs (task_id, trigger, status, started_at, result) VALUES (?, 'cron', 'alert', ?, ?)`).run(taskId, new Date().toISOString(), 'Disque à 91 %.').lastInsertRowid);
 
+    // Toute la configuration est visible en ouvrant la ronde.
+    const cfg = (await agent.get(`/tasks/${taskId}`).set('Host', HOST)).text;
+    for (const x of ['Configuration', 'Toutes les heures', 'Alerte mail', 'aucun destinataire', '4 tours maximum, 300 s maximum', 'Réponds RAS sous 85 %']) expect(cfg).toContain(x);
     const runPage = (await agent.get(`/runs/${runId}`).set('Host', HOST)).text;
     expect(runPage).not.toContain('Commenter ce résultat');
     expect(runPage).toContain(`action="/tasks/${taskId}/ask"`);

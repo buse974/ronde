@@ -6,13 +6,17 @@ Planificateur de tâches Claude auto-hébergé, open source.
 
 **→ [ronde.altstud.io](https://ronde.altstud.io)**
 
-Une petite UI web pour créer des tâches récurrentes qui lancent `claude -p` sur ton serveur, avec l'historique des runs, la consommation (tokens, coût estimé) et une alerte par mail quand Claude signale un problème.
+Tu décris à Claude ce qu'il doit surveiller ; il en fait une « ronde » : un prompt que `claude -p` exécute sur ton serveur, à heure fixe ou à la demande. ronde garde l'historique des passages, leur coût, et t'envoie un mail quand Claude signale un problème.
 
 > Prototype. Hors périmètre pour l'instant : connecteurs MCP dans les rondes, seuils de consommation.
 
 ## Principe
 
-- Chaque tâche (« ronde ») = un prompt, une planification cron (ou aucune : tâche **manuelle**, lancée à la demande), les outils autorisés, un nombre de tours max et un timeout.
+- **Tout part d'une conversation avec Claude.** Tu poses une question ou décris ce qui t'inquiète ; Claude répond, puis t'aide à en faire une **ronde** (planifiée) ou un **oneshot** (relancé à la main). Il la crée quand tu lui dis « ok ».
+- **Une ronde garde sa conversation.** Elle reste à côté de la ronde et de chacun de ses passages : « pourquoi cette alerte ? », « ignore /boot », « mets-la en pause ». Claude agit uniquement sur ton accord explicite, et répond en une phrase ce qu'il a fait.
+- **Historique.** Chaque création, modification (prompt avant / après), pause ou archivage est noté dans la conversation par ronde, pas par Claude. Claude le relit à chaque message ; tu le vois avec **Réglages > Mode debug**.
+- **Rien n'est supprimé.** Une ronde s'archive avec sa conversation et ses passages ; depuis les archives, « remets-la active » suffit.
+- Une ronde = un prompt, une planification cron (ou aucune : lancée à la demande), les outils autorisés, un nombre de tours max et un timeout.
 - **Convention RAS** : le prompt demande à Claude de répondre exactement `RAS` s'il n'y a rien à signaler. Toute autre réponse est une **alerte** (mail envoyé).
 - Un run est en **échec** si le code de sortie est différent de 0 **ou** si `is_error` vaut `true` (le champ `subtype` est ignoré), ainsi qu'en cas de timeout ou de sortie illisible. Un échec envoie aussi un mail.
 - Un run n'est jamais lancé si le précédent de la même tâche tourne encore.
@@ -100,7 +104,7 @@ Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_hos
 
 ## Modèles et données de l'hôte
 
-La page des tâches propose des modèles. Claude n'y a que l'outil `Read` : les données sont produites **sur l'hôte** par des scripts, et Claude les lit en lecture seule : dans `/host-metrics` avec Docker, dans `/opt/ronde/host-metrics` sans Docker. Claude n'a ni socket Docker ni privilège. Un timer systemd prêt à l'emploi est dans [`systemd/`](systemd/).
+Claude connaît des modèles de rondes (outil MCP `list_templates`) qui n'utilisent que l'outil `Read` : les données sont produites **sur l'hôte** par des scripts, et Claude les lit en lecture seule : dans `/host-metrics` avec Docker, dans `/opt/ronde/host-metrics` sans Docker. Claude n'a ni socket Docker ni privilège. Un timer systemd prêt à l'emploi est dans [`systemd/`](systemd/).
 
 | Modèle | Script hôte | Contenu |
 |---|---|---|

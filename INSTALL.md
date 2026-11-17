@@ -145,6 +145,7 @@ journalctl -u ronde | grep -A1 "Code d'installation"         # sans Docker
 1. Ouvre `http://<serveur>:3000/setup`.
 2. Saisis le code, puis crée le compte admin (identifiant + mot de passe).
 3. Le token Claude et l'email d'alerte peuvent être renseignés tout de suite ou plus tard dans **Réglages**.
+4. Ensuite, tout part de l'encart **« Que doit surveiller Claude ? »** sur l'accueil : décris ce qui t'inquiète, Claude te répond et t'aide à en faire une ronde.
 
 Le code change à chaque redémarrage tant que l'installation n'est pas terminée. Il n'est plus généré une fois l'admin créé.
 

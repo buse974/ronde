@@ -1,0 +1,19 @@
+<%
+  // Configuration complète d'une ronde, en popup (page de la ronde et page d'un passage).
+  const t = it.task, h = it.h;
+%>
+<dialog class="config-ronde" id="config-ronde" aria-labelledby="t-config">
+  <div class="config-tete">
+    <h2 id="t-config">Configuration · <%= t.name %></h2>
+    <form method="dialog"><button type="submit" class="secondaire compact" aria-label="Fermer">Fermer</button></form>
+  </div>
+  <dl class="fiche">
+    <dt>État</dt><dd><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></dd>
+    <dt>Déclenchement</dt><dd><% if (t.cron) { %><%= h.cronText(t.cron) %> <code><%= t.cron %></code><% if (t.active && !t.archived_at) { %><br><span class="discret">Prochain passage : <%= h.nextRun(t.cron) %></span><% } %><% } else if (t.run_at) { %><%= h.triggerText(t) %><% } else { %>À la demande (oneshot)<% } %></dd>
+    <dt>Alerte mail</dt><dd><% if (!t.notify) { %>Non : simple réponse, pas de mail<% } else if (it.alertEmail) { %>Si la réponse n'est pas « RAS » ou en cas d'échec, à <strong><%= it.alertEmail %></strong><% } else { %>Activée, mais aucun destinataire : <a href="/settings#r-alertes">à régler</a><% } %></dd>
+    <dt>Outils</dt><dd><%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %></dd>
+    <dt>Limites</dt><dd><%= t.max_turns %> tours maximum, <%= t.timeout_sec %> s maximum</dd>
+    <dt>Créée</dt><dd><%= h.short(t.created_at) %><%= t.created_via === 'mcp' ? ', via MCP' : '' %> · modifiée <%= h.short(t.updated_at) %></dd>
+  </dl>
+  <details open class="prompt-ronde"><summary>Prompt</summary><pre><%= t.prompt %></pre></details>
+</dialog>

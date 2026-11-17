@@ -40,16 +40,16 @@ Sinon, réponds en 5 lignes maximum : chaque problème avec les chiffres et une 
 - /host-metrics/fail2ban.txt : état de fail2ban et de ses jails, bannissements et échecs SSH des dernières 24 h, connexions SSH réussies (utilisateur, IP, méthode, clé reconnue ou non) ;
 - /host-metrics/fail2ban-history.csv : historique (timestamp, bans_24h, echecs_ssh_24h, bannies_actuellement, connexions_24h).
 
-Les déploiements GitHub Actions se connectent souvent en clé publique avec la clé de déploiement depuis des IP variables : c'est normal.
-
 Signale un problème si au moins une condition est vraie :
 1. fail2ban n'est pas actif, ou une jail (dont sshd) manque ;
-2. une connexion SSH a réussi par mot de passe, avec une clé non reconnue, ou pour un autre utilisateur que fedora ;
+2. une connexion SSH a réussi par mot de passe, ou avec une clé non reconnue (absente d'authorized_keys) ;
 3. les bannissements ou les échecs SSH sur 24 h dépassent 3 fois leur moyenne des 7 derniers jours ;
 4. la dernière mesure date de plus de 2 heures, ou un fichier est absent ou illisible.
 
 S'il n'y a rien à signaler, réponds exactement « RAS » et rien d'autre.
-Sinon, réponds en 6 lignes maximum : chaque problème avec les chiffres (IP, utilisateur, heure) et une action recommandée.`,
+Sinon, réponds en 6 lignes maximum : chaque problème avec les chiffres (IP, utilisateur, heure) et une action recommandée.
+
+Exceptions connues de ce serveur (utilisateurs attendus, clés de déploiement, IP de confiance) : aucune pour l'instant.`,
   },
 };
 

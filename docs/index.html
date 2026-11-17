@@ -274,8 +274,8 @@ footer a { color: var(--brume); }
         <div><div class="trait"></div><h3>Historique et consommation</h3><p>Chaque run garde sa réponse, ses tokens, son coût estimé et sa durée. Tu sais ce que coûte ta tranquillité.</p></div>
         <div><div class="trait"></div><h3>Outils sous contrôle</h3><p>Pour chaque ronde : les outils autorisés, le nombre de tours max, le timeout. Rien de plus que ce dont la tâche a besoin.</p></div>
         <div><div class="trait"></div><h3>Modèles prêts à l'emploi</h3><p>Disque et Docker, SSH et fail2ban : des scripts hôte produisent les données, Claude les lit en lecture seule.</p></div>
-        <div><div class="trait"></div><h3>Ton abonnement suffit</h3><p><code>claude setup-token</code>, tu colles le token, c'est pris sur ton quota Pro/Max. Pas de facturation à part.</p></div>
-        <div><div class="trait"></div><h3>Un seul conteneur</h3><p>Node, SQLite, une UI en HTML serveur. Pas de base externe, pas de file d'attente, pas de build front.</p></div>
+        <div><div class="trait"></div><h3>Une conversation par ronde</h3><p>Elle reste à côté de la ronde et de ses passages, avec l'historique de chaque changement. Rien n'est supprimé : on archive.</p></div>
+        <div><div class="trait"></div><h3>Docker ou systemd</h3><p>Node, SQLite, une UI en HTML serveur. Un conteneur, ou un service systemd. Pas de base externe, pas de build front.</p></div>
       </div>
     </section>
 
@@ -285,13 +285,14 @@ footer a { color: var(--brume); }
           <div class="titre-section" style="margin-bottom:0">
             <span class="numero">03 — Avec Claude</span>
             <h2>Décris ce que tu veux surveiller. Claude écrit la ronde.</h2>
-            <p>ronde expose un serveur MCP. Depuis Claude Code ou claude.ai, Claude conçoit la ronde avec toi, l'essaie pour de vrai, puis la crée quand tu valides.</p>
+            <p>Dans ronde, ou depuis Claude Code et claude.ai par MCP : Claude conçoit la ronde avec toi, l'essaie pour de vrai, puis la crée quand tu dis « ok ». Ensuite, tu la règles en lui parlant.</p>
           </div>
           <ol class="etapes">
             <li><span><strong>Il regarde</strong> les données disponibles sur l'hôte et les modèles existants.</span></li>
             <li><span><strong>Il te pose les bonnes questions</strong> : seuils, fréquence, exceptions.</span></li>
             <li><span><strong>Il essaie le prompt</strong> sur le serveur et te montre le résultat et le coût.</span></li>
             <li><span><strong>Il crée la ronde</strong>, seulement après ton accord.</span></li>
+            <li><span><strong>Il la règle</strong> quand tu lui demandes : « ignore /boot », « mets-la en pause ».</span></li>
           </ol>
         </div>
         <div class="conversation" aria-label="Exemple de conversation">
@@ -308,13 +309,13 @@ footer a { color: var(--brume); }
       <div class="titre-section">
         <span class="numero">04 — Installation</span>
         <h2>Trois commandes, un compte admin.</h2>
-        <p>Un serveur avec Docker suffit. Le code d'installation s'affiche dans les logs.</p>
+        <p>Avec Docker, ou sans : Node 22 et systemd (<a href="https://github.com/buse974/ronde/blob/main/INSTALL.md#2b-sans-docker-node--systemd">guide</a>). Le code d'installation s'affiche dans les logs.</p>
       </div>
       <div class="install">
         <div>
           <h3>Lancer ronde</h3>
 <pre><span class="p">$ </span>git clone https://github.com/buse974/ronde.git &amp;&amp; cd ronde
-<span class="p">$ </span>docker compose up -d
+<span class="p">$ </span>docker compose up -d --build
 <span class="p">$ </span>docker compose logs ronde   <span class="c"># code d'installation</span></pre>
         </div>
         <div>
@@ -334,10 +335,10 @@ footer a { color: var(--brume); }
         <h2>Claude a les clés de la ronde, pas celles de la maison.</h2>
       </div>
       <ul class="liste-secu">
-        <li><strong>Utilisateur dédié.</strong> <code>claude</code> tourne sous <code>runner</code>, avec un environnement vide : il ne voit ni la base, ni le secret, ni l'environnement de l'app.</li>
-        <li><strong>Conteneur minimal.</strong> Trois capacités seulement (<code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>) et <code>no-new-privileges</code>. Pas de socket Docker.</li>
+        <li><strong>Utilisateur dédié.</strong> <code>claude</code> tourne sous un compte dédié, avec un environnement vide : il ne voit ni la base, ni le secret, ni l'environnement de l'app.</li>
+        <li><strong>Droits minimaux.</strong> Trois capacités seulement (<code>SETUID</code>, <code>SETGID</code>, <code>KILL</code>) et <code>no-new-privileges</code>, en conteneur comme avec systemd. Pas de socket Docker.</li>
         <li><strong>Token chiffré.</strong> AES-256-GCM en base, clé dérivée d'un secret généré au premier démarrage.</li>
-        <li><strong>Données hôte en lecture seule.</strong> Les scripts tournent sur l'hôte ; le conteneur ne fait que lire <code>/host-metrics</code>.</li>
+        <li><strong>Données hôte en lecture seule.</strong> Les scripts tournent sur l'hôte ; Claude ne fait que lire leurs résultats.</li>
         <li><strong>MCP en OAuth 2.1.</strong> PKCE, aucun token à copier, accès révocable, et outils limités par défaut à <code>Read</code>, <code>Grep</code>, <code>Glob</code>.</li>
         <li><strong>UI verrouillée.</strong> Compte admin argon2, cookie <code>HttpOnly</code> + <code>SameSite=Strict</code>, contrôle d'origine, limite des tentatives.</li>
       </ul>

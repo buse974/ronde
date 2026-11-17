@@ -403,6 +403,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       tuned: req.query.tuned === '1',
       conv,
       live: conv ? asks.live(conv.id) : null,
+      alertEmail: store.getSetting('alert_email'),
       askBusy: asks.busy,
       convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
     });
@@ -479,6 +480,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       task: store.getTask(run.task_id),
       conv,
       live: conv ? asks.live(conv.id) : null,
+      alertEmail: store.getSetting('alert_email'),
       askBusy: asks.busy,
       convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
     });

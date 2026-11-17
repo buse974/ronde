@@ -3,7 +3,7 @@
 <div class="ronde-page">
 <%~ include('./partials/claude-panel', it) %>
 <div class="ronde-centre">
-<p class="petit"><a href="/tasks/<%= r.task_id %>"><%= r.task_name %></a></p>
+<p class="petit"><a href="/tasks/<%= r.task_id %>"><%= r.task_name %></a> · <button type="button" class="lien" data-ouvre="config-ronde">Configuration</button></p>
 
 <% if (r.status === 'running') { %>
   <div class="verdict"><span class="etat running">En cours</span></div>
@@ -33,3 +33,4 @@
 <% } %>
 </div>
 </div>
+<%~ include('./partials/config-ronde', it) %>

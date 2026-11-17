@@ -17,6 +17,7 @@
     </p>
   </div>
   <div class="actions">
+    <button type="button" class="secondaire" data-ouvre="config-ronde">Configuration</button>
     <% if (!t.archived_at) { %><form method="post" action="/tasks/<%= t.id %>/run"><button type="submit">Lancer maintenant</button></form><% } %>
   </div>
 </div>
@@ -105,11 +106,6 @@
 <% } %>
 
 <div style="margin-top:2.5rem">
-<details>
-  <summary>Prompt et réglages</summary>
-  <p>Outils : <%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %>. Tours maximum : <%= t.max_turns %>. Délai maximum : <%= t.timeout_sec %> s.</p>
-  <pre><%= t.prompt %></pre>
-</details>
 <% if (!t.archived_at) { %>
 <details class="zone-danger">
   <summary>Archiver la ronde</summary>
@@ -122,3 +118,4 @@
 </div>
 </div>
 </div>
+<%~ include('./partials/config-ronde', it) %>
