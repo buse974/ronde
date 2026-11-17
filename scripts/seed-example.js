@@ -4,9 +4,11 @@ import 'dotenv/config';
 import { loadConfig } from '../server/config.js';
 import { openDb } from '../server/db.js';
 import { createStore } from '../server/store.js';
-import { DISK_TASK } from '../server/examples.js';
+import { templateTask } from '../server/examples.js';
 
-const store = createStore(openDb(loadConfig().dbPath));
+const config = loadConfig();
+const DISK_TASK = templateTask('disk', config.hostDataDir);
+const store = createStore(openDb(config.dbPath));
 if (store.listTasks().some((t) => t.name === DISK_TASK.name)) {
   console.log('Tâche déjà présente.');
 } else {

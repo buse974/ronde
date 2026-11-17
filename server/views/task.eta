@@ -22,6 +22,9 @@
 <% if (it.started === 'busy') { %><p class="note attention">Un passage de cette ronde est déjà en cours.</p><% } %>
 <% if (it.tuned) { %><p class="note">Ronde modifiée. Le prochain passage utilisera la nouvelle version.</p><% } %>
 
+<div class="echange echange-ronde">
+<div class="fil">
+
 <h3>30 derniers jours</h3>
 <div class="bande" role="img" aria-label="Pire résultat de chaque jour sur 30 jours">
   <% it.strip.forEach((d) => { %><span class="<%= d.status || '' %>" title="<%= d.label %> : <%= d.status ? h.statusLabel(d.status) : 'aucun passage' %>"></span><% }) %>
@@ -99,4 +102,7 @@
     <button type="submit" class="danger">Supprimer définitivement</button>
   </form>
 </details>
+</div>
+</div>
+<%~ include('./partials/claude-panel', it) %>
 </div>

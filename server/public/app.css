@@ -478,3 +478,14 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
   .volet { position: static; max-height: none; overflow: visible; margin: 0 0 1.5rem; }
 }
 .carte code { white-space: nowrap; }
+
+/* --- Panneau « Claude » de la page d'une ronde -------------------------- */
+.echange-ronde { grid-template-columns: minmax(0, 1fr) 24rem; margin-top: 0.5rem; }
+.echange-ronde .volet { margin-top: 0; }
+.volet-claude .fil-volet { margin: 0.6rem 0 0; gap: 0.6rem; }
+.volet-claude .bulle { padding: 0.55rem 0.8rem; font-size: var(--step--1); max-width: 100%; }
+.volet-claude .bulle.moi { margin-left: 1.5rem; }
+.volet-claude .bulle.claude { margin-right: 1.5rem; }
+.saisie-volet { flex-direction: column; align-items: stretch; }
+.saisie-volet textarea { background: var(--nuit-2); }
+@media (max-width: 960px) { .echange-ronde { grid-template-columns: 1fr; } }

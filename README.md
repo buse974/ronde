@@ -21,11 +21,41 @@ Une petite UI web pour créer des tâches récurrentes qui lancent `claude -p` s
 
 > Guide complet (HTTPS, mails, MCP, données hôte, mises à jour, sauvegardes, dépannage) : **[INSTALL.md](INSTALL.md)**.
 
+Deux façons, au choix. Dans les deux cas, `claude` tourne sous un compte dédié qui ne peut lire ni la base ni les secrets de ronde.
+
+### Avec Docker
+
+L'image est construite sur ton serveur depuis les sources ([`Dockerfile`](Dockerfile)).
+
 ```bash
 git clone https://github.com/buse974/ronde.git && cd ronde
-docker compose up -d
+docker compose up -d --build
 docker compose logs ronde      # affiche le code d'installation
 ```
+
+### Sans Docker (Node + systemd)
+
+Prérequis : Node.js 22, git, `python3`, `make` et `g++`. En root :
+
+```bash
+git clone https://github.com/buse974/ronde.git /opt/ronde && cd /opt/ronde
+npm ci --omit=dev
+npm install -g @anthropic-ai/claude-code
+
+useradd --system --home-dir /var/lib/ronde-runner --create-home --shell /usr/sbin/nologin ronde-runner
+install -d -o ronde-runner -g ronde-runner -m 711 /var/lib/ronde-runner/work
+chmod 711 /var/lib/ronde-runner
+install -d -m 755 /opt/ronde/host-metrics
+install -d -m 755 /etc/ronde && install -m 600 .env.example /etc/ronde/ronde.env
+
+cp systemd/ronde.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now ronde
+journalctl -u ronde | grep -A1 "Code d'installation"
+```
+
+Le détail de chaque étape, la mise à jour et la sauvegarde : [INSTALL.md § 2.B](INSTALL.md#2b-sans-docker-node--systemd).
+
+### Premier accès
 
 Ouvre `http://<serveur>:3000/setup`, saisis le code, crée le compte admin. Le token Claude et l'email d'alerte peuvent être renseignés tout de suite ou plus tard dans **Réglages**.
 
@@ -43,7 +73,7 @@ Le « coût estimé » affiché est l'équivalent API renvoyé par Claude : indi
 
 ### Mails d'alerte
 
-Renseigne un relais SMTP dans `.env` (voir `.env.example`), puis l'email destinataire dans **Réglages** (bouton « Envoyer un mail de test »).
+Renseigne un relais SMTP dans `.env`, ou `/etc/ronde/ronde.env` sans Docker (voir `.env.example`), puis l'email destinataire dans **Réglages** (bouton « Envoyer un mail de test »).
 
 ## Piloter ronde depuis Claude (MCP)
 
@@ -62,15 +92,15 @@ Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_hos
 
 ## Sécurité
 
-- `claude` tourne sous un utilisateur dédié (`runner`, uid 1001) avec un environnement construit de zéro : il ne reçoit que le token Claude. Il ne peut lire ni `/data` (base, secret), ni l'environnement du process app.
-- Le conteneur n'a que les capacités `SETUID`, `SETGID` (changer d'uid) et `KILL` (arrêter un run expiré), avec `no-new-privileges`.
-- Le token Claude est chiffré en base (AES-256-GCM). La clé dérive d'`APP_SECRET`, généré au premier démarrage dans `/data/secret.key` si la variable n'est pas fournie. **Sauvegarder `/data` revient à sauvegarder ce secret.**
+- `claude` tourne sous un utilisateur dédié (`runner` dans le conteneur, `ronde-runner` sans Docker) avec un environnement construit de zéro : il ne reçoit que le token Claude. Il ne peut lire ni le dossier de données (base, secret), ni l'environnement du process app.
+- Le process app n'a que les capacités `SETUID`, `SETGID` (changer d'uid) et `KILL` (arrêter un run expiré), avec `no-new-privileges` : via `docker-compose.yml`, ou via [`systemd/ronde.service`](systemd/ronde.service), qui met en plus le système en lecture seule.
+- Le token Claude est chiffré en base (AES-256-GCM). La clé dérive d'`APP_SECRET`, généré au premier démarrage dans `secret.key` (à côté de la base) si la variable n'est pas fournie. **Sauvegarder le dossier de données revient à sauvegarder ce secret.**
 - UI : un compte admin (argon2), cookie de session `HttpOnly` + `SameSite=Strict`, contrôle de l'origine sur les requêtes POST, limitation des tentatives de connexion.
-- Un outil comme `Bash` donne à Claude un shell dans le conteneur (en tant que `runner`) : n'autorise que ce dont la tâche a besoin, de préférence avec des règles restreintes (`Bash(df:*)`).
+- Un outil comme `Bash` donne à Claude un shell (dans le conteneur, ou sur le serveur sans Docker, toujours sous le compte dédié) : n'autorise que ce dont la tâche a besoin, de préférence avec des règles restreintes (`Bash(df:*)`).
 
 ## Modèles et données de l'hôte
 
-La page des tâches propose des modèles. Claude n'y a que l'outil `Read` : les données sont produites **sur l'hôte** par des scripts et montées en lecture seule dans `/host-metrics`. Pas de socket Docker ni de privilège dans le conteneur.
+La page des tâches propose des modèles. Claude n'y a que l'outil `Read` : les données sont produites **sur l'hôte** par des scripts, et Claude les lit en lecture seule : dans `/host-metrics` avec Docker, dans `/opt/ronde/host-metrics` sans Docker. Claude n'a ni socket Docker ni privilège. Un timer systemd prêt à l'emploi est dans [`systemd/`](systemd/).
 
 | Modèle | Script hôte | Contenu |
 |---|---|---|
@@ -91,7 +121,7 @@ npm run dev      # http://localhost:3000, données dans ./data
 npm test
 ```
 
-En dev, sans `RUNNER_UID`, `claude` tourne sous ton utilisateur.
+En dev, sans `RUNNER_USER` ni `RUNNER_UID`, `claude` tourne sous ton utilisateur.
 
 Stack : Node 22, Express 5, SQLite (better-sqlite3), croner, Eta + htmx + Pico.css, argon2, nodemailer, zod, SDK MCP officiel, vitest.
 

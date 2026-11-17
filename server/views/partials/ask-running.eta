@@ -1,5 +1,5 @@
 <% const l = it.live || { steps: [], text: '' }; %>
-<div class="en-direct" hx-get="/asks/<%= it.ask.id %>/status" hx-trigger="every 1s" hx-swap="outerHTML" aria-live="polite">
+<div class="en-direct" hx-get="/asks/<%= it.ask.id %>/status<%= it.back ? '?back=' + it.back : '' %>" hx-trigger="every 1s" hx-swap="outerHTML" aria-live="polite">
   <div class="bulle claude">
     <span class="qui">Claude</span>
     <% if (l.steps.length) { %>
@@ -10,7 +10,7 @@
     <% if (l.text) { %><div><%= l.text %><span class="curseur" aria-hidden="true"></span></div>
     <% } else if (!l.steps.length) { %><p class="discret attente">Claude réfléchit…</p><% } %>
   </div>
-  <form method="post" action="/asks/<%= it.ask.id %>/stop" class="arreter">
+  <form method="post" action="/asks/<%= it.ask.id %>/stop" class="arreter"><% if (it.back) { %><input type="hidden" name="back" value="<%= it.back %>"><% } %>
     <button type="submit" class="danger compact">Arrêter</button>
     <span class="petit discret">Coupé automatiquement après <%= it.ask.kind === 'exec' ? 5 : 4 %> min.</span>
   </form>

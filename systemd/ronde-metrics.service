@@ -1,0 +1,10 @@
+# Données de l'hôte pour les modèles disque et SSH (voir INSTALL.md, « Données de l'hôte »).
+# Remplace « admin » par un compte qui a sudo sans mot de passe.
+[Unit]
+Description=ronde : données hôte (disque, Docker, fail2ban)
+
+[Service]
+Type=oneshot
+User=admin
+ExecStart=/opt/ronde/host/ronde-metrics.sh /opt/ronde/host-metrics
+ExecStart=/opt/ronde/host/ronde-fail2ban.sh /opt/ronde/host-metrics

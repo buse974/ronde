@@ -64,8 +64,10 @@ export function createStore(db) {
     getTask(id) {
       return parseTask(stmt('SELECT * FROM tasks WHERE id = ?').get(id));
     },
+    /** Crée la ronde et sa conversation avec Claude (toujours une, vide au départ). */
     createTask(t) {
       const now = nowIso();
+      return db.transaction(() => {
       const info = stmt(
         `INSERT INTO tasks (name, prompt, cron, allowed_tools, max_turns, timeout_sec, active, created_via, run_at, notify, created_at, updated_at)
          VALUES (@name, @prompt, @cron, @allowed_tools, @max_turns, @timeout_sec, @active, @created_via, @run_at, @notify, @now, @now)`,
@@ -78,7 +80,10 @@ export function createStore(db) {
         notify: t.notify === false ? 0 : 1,
         now,
       });
-      return Number(info.lastInsertRowid);
+      const id = Number(info.lastInsertRowid);
+      stmt(`INSERT INTO asks (kind, status, title, task_id, created_at, updated_at) VALUES ('tune', 'done', ?, ?, ?, ?)`).run(t.name.slice(0, 200), id, now, now);
+      return id;
+      })();
     },
     updateTask(id, t) {
       stmt(

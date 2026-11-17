@@ -53,13 +53,18 @@ Sinon, réponds en 6 lignes maximum : chaque problème avec les chiffres (IP, ut
   },
 };
 
+/** Modèles avec les chemins du dossier de données hôte réellement utilisé. */
+export function templatesFor(hostDataDir = '/host-metrics') {
+  return Object.fromEntries(
+    Object.entries(TEMPLATES).map(([k, t]) => [k, { ...t, prompt: t.prompt.replaceAll('/host-metrics/', `${hostDataDir}/`) }]),
+  );
+}
+
 /** Champs d'une tâche créée à partir d'un modèle. */
-export function templateTask(key) {
-  const t = TEMPLATES[key];
+export function templateTask(key, hostDataDir) {
+  const t = templatesFor(hostDataDir)[key];
   if (!t) return null;
   const { summary, requires, ...task } = t;
   return { ...task, created_via: 'template' };
 }
 
-// Compatibilité : ancien nom utilisé par scripts/seed-example.js.
-export const DISK_TASK = templateTask('disk');

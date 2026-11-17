@@ -154,7 +154,7 @@ describe('outils MCP', () => {
     const { access_token: tok } = await connect(app);
 
     const data = await call(app, tok, 'list_host_data');
-    expect(data.data[0]).toMatchObject({ chemin: '/host-metrics/fail2ban.txt' });
+    expect(data.data[0]).toMatchObject({ chemin: `${dir}/fail2ban.txt` });
     expect(data.data[0].apercu).toContain('jail sshd');
 
     const tpl = await call(app, tok, 'list_templates');

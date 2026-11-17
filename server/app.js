@@ -286,12 +286,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
 
   app.get('/asks/:id/status', loadAsk, (req, res) => {
     if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
-    res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id) });
+    res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id), back: req.query.back === 'task' ? 'task' : null });
   });
 
   app.post('/asks/:id/stop', loadAsk, (req, res) => {
     asks.stop(req.ask.id);
-    res.redirect(`/asks/${req.ask.id}`);
+    res.redirect(req.body.back === 'task' && req.ask.task_id ? `/tasks/${req.ask.task_id}#claude` : `/asks/${req.ask.id}`);
   });
 
   app.post('/asks/:id/reply', loadAsk, (req, res) => {
@@ -319,7 +319,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     const question = a.messages.find((m) => m.role === 'user')?.text ?? a.title;
     const id = store.createTask({
       name: a.title.slice(0, 100),
-      prompt: `${question}\n\nLes données du serveur (disque, Docker, fail2ban…) sont relevées dans /host-metrics : lis-les avec l'outil Read. Réponds en français, de façon concise, avec les chiffres et l'heure de la mesure.`,
+      prompt: `${question}\n\nLes données du serveur (disque, Docker, fail2ban…) sont relevées dans ${config.hostDataDir} : lis-les avec l'outil Read. Réponds en français, de façon concise, avec les chiffres et l'heure de la mesure.`,
       cron: '',
       allowed_tools: ASK_TOOLS,
       max_turns: 10,
@@ -328,13 +328,14 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       notify: false,
       run_at: null,
     });
+    asks.link(a.id, id);
     res.redirect(`/tasks/${id}/edit?kept=1`);
   });
 
   // Appliquer la ronde modifiée proposée en commentant un passage.
   app.post('/asks/:id/apply', loadAsk, (req, res) => {
     const a = req.ask;
-    const task = a.kind === 'tune' && a.task_id ? store.getTask(a.task_id) : null;
+    const task = a.task_id ? store.getTask(a.task_id) : null;
     if (!task || !a.proposal || a.proposal.error) return res.redirect(`/asks/${a.id}`);
     const { error, ...p } = a.proposal;
     store.updateTask(task.id, { ...task, name: p.name, prompt: p.prompt, cron: p.cron, allowed_tools: p.allowed_tools, max_turns: p.max_turns, timeout_sec: p.timeout_sec });
@@ -351,8 +352,10 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
 
   app.post('/tasks', (req, res) => {
     const { data, errors, values } = parseTaskForm(req.body, config.timezone);
-    if (errors) return res.status(400).view('task-form', { task: null, values, errors });
+    if (errors) return res.status(400).view('task-form', { task: null, values, errors, fromAsk: Number(req.body.from_ask) || null });
     const id = store.createTask(data);
+    const fromAsk = Number(req.body.from_ask);
+    if (fromAsk && asks.get(fromAsk)) asks.link(fromAsk, id);
     res.redirect(`/tasks/${id}`);
   });
 
@@ -371,6 +374,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   };
 
   app.get('/tasks/:id', loadTask, (req, res) => {
+    const conv = asks.forTask(req.task.id);
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
     const total = store.countRuns(req.task.id);
     res.view('task', {
@@ -382,7 +386,19 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
       started: req.query.started,
       tuned: req.query.tuned === '1',
+      conv,
+      live: conv ? asks.live(conv.id) : null,
+      askBusy: asks.busy,
+      convError: req.query.claude === 'busy' ? 'Claude répond déjà à une autre demande, réessaie dans un instant.' : null,
     });
+  });
+
+  // Parler à Claude depuis la page de la ronde (panneau « Claude »).
+  app.post('/tasks/:id/ask', loadTask, (req, res) => {
+    const text = String(req.body.text ?? '').trim().slice(0, 20_000);
+    if (!text) return res.redirect(`/tasks/${req.task.id}#claude`);
+    const r = asks.talk(req.task.id, text, { tools: mcpAllowedTools(store), title: `${req.task.name} : ${text}` });
+    res.redirect(`/tasks/${req.task.id}${r.error ? '?claude=busy' : ''}#claude`);
   });
 
   app.get('/tasks/:id/edit', loadTask, (req, res) => {
@@ -416,7 +432,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   });
 
   app.post('/tasks/:id/delete', loadTask, (req, res) => {
-    store.deleteTask(req.task.id);
+    store.deleteTask(req.task.id); // sa conversation part avec elle (ON DELETE CASCADE)
     res.redirect('/tasks');
   });
 
@@ -427,9 +443,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     if (!run) return res.status(404).view('error', { message: 'Run introuvable.' });
     const text = String(req.body.text ?? '').trim().slice(0, 20_000);
     if (!text) return res.redirect(`/runs/${run.id}`);
-    const started = asks.start('tune', text, mcpAllowedTools(store), { title: `${run.task_name} : ${text}`, taskId: run.task_id, runId: run.id });
-    if (!started) return res.status(409).view('error', { message: 'Claude répond déjà à une autre demande, réessaie dans un instant.' });
-    res.redirect(`/asks/${started.id}`);
+    const r = asks.talk(run.task_id, text, { runId: run.id, tools: mcpAllowedTools(store), title: `${run.task_name} : ${text}` });
+    res.redirect(`/tasks/${run.task_id}${r.error ? '?claude=busy' : ''}#claude`);
   });
 
   app.get('/runs/:id', (req, res) => {

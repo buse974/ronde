@@ -2,12 +2,19 @@
 
 Ce guide couvre l'installation sur un serveur Linux, de la première commande jusqu'à l'exploitation : HTTPS, mails, MCP, données de l'hôte, mises à jour, sauvegardes et dépannage.
 
+Deux façons d'installer ronde, au choix :
+
+- **[Avec Docker](#2a-avec-docker)** : tout est dans un conteneur, construit sur ton serveur depuis les sources.
+- **[Sans Docker](#2b-sans-docker-node--systemd)** : Node.js et un service systemd. Claude tourne alors directement sur le serveur, sous un compte dédié sans privilège.
+
+Les deux ont le même modèle de sécurité : le process `claude` tourne sous un utilisateur qui ne peut lire ni la base ni le secret de ronde. Dans la suite du guide, quand une commande diffère, les deux variantes sont données.
+
 Pour une présentation de l'outil, voir le [README](README.md).
 
 ## Sommaire
 
 1. [Prérequis](#1-prérequis)
-2. [Installation](#2-installation)
+2. [Installation](#2-installation) : [avec Docker](#2a-avec-docker) ou [sans Docker](#2b-sans-docker-node--systemd)
 3. [Premier démarrage](#3-premier-démarrage)
 4. [Token Claude](#4-token-claude)
 5. [Configuration (`.env`)](#5-configuration-env)
@@ -29,15 +36,18 @@ Pour une présentation de l'outil, voir le [README](README.md).
 | Élément | Requis | Remarque |
 |---|---|---|
 | Serveur Linux x86_64 | oui | 1 vCPU et 1 Go de RAM suffisent ; chaque run lance un process `claude`. |
-| Docker Engine + plugin Compose v2 | oui | `docker compose version` doit répondre. |
+| **Avec Docker :** Docker Engine + plugin Compose v2 | oui | `docker compose version` doit répondre. |
+| **Sans Docker :** Node.js 22, npm, git, systemd, `python3`, `make` et `g++` | oui | `better-sqlite3` se compile à l'installation. Node 22 via les paquets de ta distribution ou [NodeSource](https://github.com/nodesource/distributions). |
 | Abonnement Claude Pro/Max **ou** clé API Anthropic | oui | Voir [Token Claude](#4-token-claude). |
 | Claude Code sur ton poste | pour le token d'abonnement | Sert uniquement à générer le token (`claude setup-token`). |
 | Relais SMTP | pour les alertes | Sans SMTP, ronde fonctionne mais n'envoie aucun mail. |
 | Nom de domaine + HTTPS | pour le MCP | Le serveur MCP exige une `PUBLIC_URL` en HTTPS (ou `localhost`). |
 
-Le port **3000** doit être libre, ou il faut changer le mapping dans `docker-compose.yml`.
+Le port **3000** doit être libre, ou il faut le changer (`ports` dans `docker-compose.yml`, ou `PORT` sans Docker).
 
 ## 2. Installation
+
+### 2.A Avec Docker
 
 ```bash
 git clone https://github.com/buse974/ronde.git
@@ -66,12 +76,65 @@ Ce que crée `docker-compose.yml` :
 - **le montage `./host-metrics`** en lecture seule sur `/host-metrics`, pour les données de l'hôte (voir [§9](#9-données-de-lhôte-modèles-disque-et-ssh)) ;
 - **des capacités réduites** : `cap_drop: ALL`, puis seulement `SETUID`, `SETGID` et `KILL`, avec `no-new-privileges`.
 
+### 2.B Sans Docker (Node + systemd)
+
+Les commandes suivantes sont à lancer en root (ou avec `sudo`). Les chemins sont ceux de l'unité fournie : code dans `/opt/ronde`, base dans `/var/lib/ronde`, configuration dans `/etc/ronde/ronde.env`.
+
+**1. Le code et le CLI Claude Code**
+
+```bash
+git clone https://github.com/buse974/ronde.git /opt/ronde
+cd /opt/ronde
+npm ci --omit=dev
+npm install -g @anthropic-ai/claude-code     # claude dans /usr/local/bin ou /usr/bin
+```
+
+**2. Le compte qui exécute Claude**
+
+```bash
+useradd --system --home-dir /var/lib/ronde-runner --create-home --shell /usr/sbin/nologin ronde-runner
+install -d -o ronde-runner -g ronde-runner -m 711 /var/lib/ronde-runner/work
+chmod 711 /var/lib/ronde-runner
+install -d -m 755 /opt/ronde/host-metrics
+```
+
+Le mode `711` est nécessaire : ronde entre dans le dossier de travail juste avant de passer sous `ronde-runner`, et il n'a pas le droit de lire les fichiers des autres.
+
+**3. La configuration**
+
+```bash
+install -d -m 755 /etc/ronde
+install -m 600 .env.example /etc/ronde/ronde.env
+```
+
+Édite `/etc/ronde/ronde.env` (voir [§5](#5-configuration-env)). Tout est facultatif pour un premier essai.
+
+**4. Le service**
+
+```bash
+cp systemd/ronde.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ronde
+systemctl status ronde                 # active (running)
+curl -s http://localhost:3000/health   # {"status":"ok","service":"ronde","type":"app"}
+```
+
+Ce que fait [`systemd/ronde.service`](systemd/ronde.service) :
+
+- **il lance `node server/index.js`** depuis `/opt/ronde`, et le relance en cas d'échec ;
+- **il garde la base dans `/var/lib/ronde`** (mode `700`), avec le secret applicatif ;
+- **il lance `claude` sous `ronde-runner`**, sans aucune capacité. Ce compte ne peut lire ni `/var/lib/ronde` ni `/etc/ronde/ronde.env` ;
+- **il réduit les droits du process** comme le conteneur : root sans autre capacité que `SETUID`, `SETGID` et `KILL`, `NoNewPrivileges`, système de fichiers en lecture seule sauf `/var/lib/ronde` et `/var/lib/ronde-runner`, `/home` et `/root` masqués.
+
+Node n'est pas dans `/usr/bin/node` (installation via nvm, par exemple) ? Adapte `ExecStart` avec `systemctl edit --full ronde`. Le binaire `claude` doit être dans `/usr/local/bin` ou `/usr/bin`, sinon fixe `CLAUDE_BIN` dans `/etc/ronde/ronde.env`.
+
 ## 3. Premier démarrage
 
 Au premier lancement, tant qu'aucun admin n'existe, ronde affiche un **code d'installation** dans ses logs :
 
 ```bash
-docker compose logs ronde | grep -A1 "Code d'installation"
+docker compose logs ronde | grep -A1 "Code d'installation"   # avec Docker
+journalctl -u ronde | grep -A1 "Code d'installation"         # sans Docker
 ```
 
 ```
@@ -89,7 +152,7 @@ Le code change à chaque redémarrage tant que l'installation n'est pas terminé
 
 ## 4. Token Claude
 
-ronde lance `claude -p` avec **un seul** jeton, sous l'utilisateur dédié `runner`.
+ronde lance `claude -p` avec **un seul** jeton, sous l'utilisateur dédié (`runner` dans le conteneur, `ronde-runner` sans Docker).
 
 ### Option A : abonnement Pro/Max (recommandé)
 
@@ -107,19 +170,19 @@ Une clé `sk-ant-api…` est acceptée au même endroit. Elle est **facturée à
 
 ### Token imposé par l'environnement
 
-`CLAUDE_CODE_OAUTH_TOKEN` (ou `ANTHROPIC_API_KEY`) dans `.env` est **prioritaire** sur le token saisi dans l'UI. C'est utile pour un déploiement automatisé, mais le token se retrouve alors en clair dans `.env`. Le token saisi dans l'UI est, lui, chiffré en base (AES-256-GCM).
+`CLAUDE_CODE_OAUTH_TOKEN` (ou `ANTHROPIC_API_KEY`) dans `.env` (ou `/etc/ronde/ronde.env`) est **prioritaire** sur le token saisi dans l'UI. C'est utile pour un déploiement automatisé, mais le token se retrouve alors en clair dans ce fichier. Le token saisi dans l'UI est, lui, chiffré en base (AES-256-GCM).
 
 Le « coût estimé » affiché pour chaque run est l'équivalent API renvoyé par Claude. Avec un abonnement, il est indicatif.
 
 ## 5. Configuration (`.env`)
 
-Toutes les variables sont facultatives. Le compte admin, le token Claude, l'email destinataire et les outils MCP se règlent dans l'UI et sont stockés en base.
+Avec Docker, les variables vont dans `.env`, à côté de `docker-compose.yml`. Sans Docker, dans `/etc/ronde/ronde.env`. Toutes sont facultatives. Le compte admin, le token Claude, l'email destinataire et les outils MCP se règlent dans l'UI et sont stockés en base.
 
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `PUBLIC_URL` | *(vide)* | URL publique de ronde, sans `/` final. Sert aux liens des mails et à l'émetteur OAuth du MCP. **Obligatoire en HTTPS pour le MCP.** |
 | `TZ` | `Europe/Paris` | Fuseau des expressions cron et des dates affichées. |
-| `PORT` | `3000` | Port d'écoute dans le conteneur. |
+| `PORT` | `3000` | Port d'écoute (dans le conteneur, avec Docker). |
 | `COOKIE_SECURE` | `false` | `true` derrière HTTPS : cookie de session `Secure`. |
 | `TRUST_PROXY` | `0` | `1` derrière un reverse proxy : IP client réelle (limitation des tentatives de connexion). |
 | `SMTP_HOST` | *(vide)* | Relais SMTP. Vide = alertes mail désactivées. |
@@ -128,18 +191,20 @@ Toutes les variables sont facultatives. Le compte admin, le token Claude, l'emai
 | `SMTP_USER` / `SMTP_PASS` | *(vide)* | Identifiants SMTP, si le relais en demande. |
 | `SMTP_FROM` | `ronde@localhost` | Expéditeur des alertes. Doit être autorisé par le SPF du domaine. |
 | `SMTP_TLS_REJECT_UNAUTHORIZED` | `true` | `false` pour accepter un certificat auto-signé (relais local). |
-| `APP_SECRET` | *(généré)* | Secret de chiffrement du token Claude. Sinon généré dans `/data/secret.key` au premier démarrage. |
+| `APP_SECRET` | *(généré)* | Secret de chiffrement du token Claude. Sinon généré dans `secret.key`, à côté de la base, au premier démarrage. |
 | `CLAUDE_CODE_OAUTH_TOKEN` / `ANTHROPIC_API_KEY` | *(vide)* | Token imposé, prioritaire sur l'UI (voir [§4](#4-token-claude)). |
-| `HOST_DATA_DIR` | `/host-metrics` | Dossier des données de l'hôte, dans le conteneur. |
+| `HOST_DATA_DIR` | `/host-metrics` | Dossier des données de l'hôte. Sans Docker, l'unité systemd le fixe à `/opt/ronde/host-metrics`. |
+| `CLAUDE_BIN` | `claude` | Chemin du CLI Claude Code, s'il n'est pas dans `/usr/local/bin` ou `/usr/bin`. |
 | `RUNNER_MAX_STDOUT` | `2097152` | Taille max de la sortie de `claude` (octets) ; au-delà, le run échoue. |
 | `RUNNER_KILL_GRACE_MS` | `10000` | Délai entre `SIGTERM` et `SIGKILL` à l'arrêt d'un run. |
 
-Les variables `RUNNER_UID`, `RUNNER_GID`, `RUNNER_HOME`, `RUNNER_CWD`, `DATA_DIR` et `NODE_ENV` sont fixées par l'image Docker : ne les change pas.
+Les variables `RUNNER_USER` (ou `RUNNER_UID` et `RUNNER_GID`), `RUNNER_HOME`, `RUNNER_CWD`, `DATA_DIR` et `NODE_ENV` sont fixées par l'image Docker ou par l'unité systemd : ne les change pas sans raison.
 
-Après toute modification de `.env` :
+Après toute modification de la configuration :
 
 ```bash
-docker compose up -d     # recrée le conteneur avec la nouvelle configuration
+docker compose up -d          # avec Docker : recrée le conteneur
+systemctl restart ronde       # sans Docker
 ```
 
 > **`APP_SECRET` :** si tu le définis après coup, ou si tu le changes, le token Claude déjà enregistré devient illisible. Il faut alors le ressaisir dans **Réglages**.
@@ -247,7 +312,9 @@ Puis dans Claude Code : `/mcp` → `ronde` → « Authenticate ». Le navigateur
 
 ## 9. Données de l'hôte (modèles disque et SSH)
 
-Les modèles « Surveillance disque et Docker » et « Sécurité SSH et fail2ban » lisent des fichiers produits **sur l'hôte** par les scripts de `host/`. Le conteneur ne reçoit que le résultat, en lecture seule dans `/host-metrics`. Il n'a ni socket Docker ni privilège.
+Les modèles « Surveillance disque et Docker » et « Sécurité SSH et fail2ban » lisent des fichiers produits **sur l'hôte** par les scripts de `host/`. Claude ne reçoit que le résultat, en lecture seule : dans `/host-metrics` avec Docker, dans `/opt/ronde/host-metrics` sans Docker. Il n'a ni socket Docker ni privilège.
+
+Sans Docker, Claude tourne déjà sur l'hôte, mais sous un compte sans privilège : il ne peut lire ni les journaux système ni l'état de fail2ban. Les scripts restent donc utiles.
 
 | Script | Fichiers produits | Commandes lancées avec `sudo -n` |
 |---|---|---|
@@ -256,7 +323,7 @@ Les modèles « Surveillance disque et Docker » et « Sécurité SSH et fail2ba
 
 ### Prérequis sur l'hôte
 
-- **Le dossier de sortie** doit être le `host-metrics/` à côté de `docker-compose.yml`, celui monté dans le conteneur.
+- **Le dossier de sortie** est le `host-metrics/` du dépôt : celui monté dans le conteneur avec Docker, `/opt/ronde/host-metrics` sans Docker.
 - **L'utilisateur** qui lance les scripts doit pouvoir faire `sudo -n` sans mot de passe, et appartenir au groupe `docker` pour `docker system df`.
 - **Pour le modèle SSH**, il faut fail2ban, sshd journalisé par systemd (unité `sshd`, modifiable via `SSH_UNIT`) et le log `/var/log/fail2ban.log` (modifiable via `F2B_LOG`).
 
@@ -277,7 +344,7 @@ Dans ronde, l'outil MCP `list_host_data` (ou un run d'essai du modèle) doit mai
 
 ### Planification avec un timer systemd (toutes les 15 minutes)
 
-Remplace `admin` par l'utilisateur et `/opt/ronde` par le chemin du dépôt.
+Les deux fichiers sont dans [`systemd/`](systemd/). Remplace `admin` par l'utilisateur, et `/opt/ronde` par le chemin du dépôt s'il est ailleurs.
 
 `/etc/systemd/system/ronde-metrics.service` :
 
@@ -322,6 +389,8 @@ journalctl -u ronde-metrics.service -n 20     # dernières exécutions
 
 ## 10. Mise à jour
 
+Avec Docker :
+
 ```bash
 cd /chemin/vers/ronde
 git pull
@@ -329,22 +398,33 @@ docker compose up -d --build
 docker image prune -f
 ```
 
+Sans Docker :
+
+```bash
+cd /opt/ronde
+git pull
+npm ci --omit=dev
+systemctl restart ronde
+```
+
 - **Migrations :** elles s'appliquent toutes seules au démarrage (`server/migrations/`, version suivie par `PRAGMA user_version`). Fais une [sauvegarde](#11-sauvegarde-et-restauration) avant une mise à jour.
 - **Runs interrompus :** un run en cours pendant le redémarrage est marqué en échec au démarrage suivant (« run(s) interrompu(s) » dans les logs).
-- **Version de Claude Code :** le CLI est figé dans l'image. Pour le mettre à jour, reconstruis l'image (`docker compose build --no-cache`).
+- **Version de Claude Code :** avec Docker, le CLI est figé dans l'image : reconstruis-la (`docker compose build --no-cache`). Sans Docker : `npm install -g @anthropic-ai/claude-code@latest`. Les mises à jour automatiques du CLI sont désactivées pendant les runs.
 
 ## 11. Sauvegarde et restauration
 
-Tout l'état de ronde est dans `/data` :
+Tout l'état de ronde est dans un seul dossier : `/data` dans le conteneur, `/var/lib/ronde` sans Docker.
 
 | Fichier | Contenu |
 |---|---|
 | `ronde.db` (+ `-wal`, `-shm`) | Rondes, historique des runs, réglages, compte admin, accès MCP, token Claude chiffré. |
 | `secret.key` | Clé de chiffrement du token Claude (absent si `APP_SECRET` est fourni). |
 
-**Sauvegarder `/data` revient à sauvegarder ce secret.** Garde la sauvegarde aussi protégée que le serveur. Sans `secret.key` (ou sans le même `APP_SECRET`), la base restaurée est lisible mais le token Claude devra être ressaisi.
+**Sauvegarder ce dossier revient à sauvegarder ce secret.** Garde la sauvegarde aussi protégée que le serveur. Sans `secret.key` (ou sans le même `APP_SECRET`), la base restaurée est lisible mais le token Claude devra être ressaisi.
 
 ### Sauvegarder
+
+Avec Docker :
 
 ```bash
 cd /chemin/vers/ronde
@@ -354,9 +434,19 @@ docker compose start ronde
 tar czf ronde-$(date +%F).tar.gz sauvegarde-$(date +%F) && rm -rf sauvegarde-$(date +%F)
 ```
 
+Sans Docker :
+
+```bash
+systemctl stop ronde
+tar czf ronde-$(date +%F).tar.gz -C /var/lib ronde
+systemctl start ronde
+```
+
 L'arrêt ne dure que quelques secondes. Un passage cron qui tombe pendant cette fenêtre est manqué : il n'est pas rattrapé. Une ronde « une seule fois » dont l'heure est passée est, elle, lancée au redémarrage.
 
 ### Restaurer
+
+Avec Docker :
 
 ```bash
 cd /chemin/vers/ronde
@@ -369,9 +459,21 @@ docker compose logs --tail 20 ronde
 
 Pour restaurer sur un nouveau serveur, fais d'abord un `docker compose up -d` pour créer le volume, puis suis la procédure ci-dessus.
 
+Sans Docker :
+
+```bash
+systemctl stop ronde
+rm -rf /var/lib/ronde && tar xzf ronde-AAAA-MM-JJ.tar.gz -C /var/lib
+chmod 700 /var/lib/ronde
+systemctl start ronde
+journalctl -u ronde -n 20
+```
+
 ## 12. Réinitialiser le compte admin
 
 Il n'y a pas de « mot de passe oublié ». En accès au serveur, efface l'admin : les rondes, l'historique et le token sont conservés.
+
+Avec Docker :
 
 ```bash
 cd /chemin/vers/ronde
@@ -382,6 +484,19 @@ db.prepare("DELETE FROM sessions").run();
 '
 docker compose restart ronde
 docker compose logs ronde | grep -A1 "Code d'installation"
+```
+
+Sans Docker :
+
+```bash
+cd /opt/ronde
+node -e '
+const db = new (require("better-sqlite3"))("/var/lib/ronde/ronde.db");
+db.prepare("DELETE FROM settings WHERE key IN (?, ?)").run("admin_user", "admin_password_hash");
+db.prepare("DELETE FROM sessions").run();
+'
+systemctl restart ronde
+journalctl -u ronde | grep -A1 "Code d'installation"
 ```
 
 Puis retourne sur `/setup` avec le nouveau code et recrée le compte.
@@ -398,24 +513,46 @@ Puis retourne sur `/setup` avec le nouveau code et recrée le compte.
 | Pas de mail d'alerte | `SMTP_HOST` absent, ou mail rejeté | Logs au démarrage ; « Envoyer un mail de test » ; SPF du domaine de `SMTP_FROM`. |
 | « Requête refusée : origine invalide » sur les formulaires | Le proxy ne transmet pas le `Host` d'origine | Transmets `Host` (voir [§7](#7-https-derrière-un-reverse-proxy)). |
 | Déconnecté en boucle | `COOKIE_SECURE=true` alors que l'accès est en HTTP | Accède en HTTPS, ou retire `COOKIE_SECURE`. |
-| `/mcp` indisponible, ou erreur OAuth dans Claude Code | `PUBLIC_URL` absente ou en HTTP | `PUBLIC_URL=https://…` puis `docker compose up -d`. |
+| `/mcp` indisponible, ou erreur OAuth dans Claude Code | `PUBLIC_URL` absente ou en HTTP | `PUBLIC_URL=https://…`, puis `docker compose up -d` ou `systemctl restart ronde`. |
 | Token Claude « illisible » après une restauration | `secret.key` ou `APP_SECRET` différent | Restaure `secret.key` avec la base, ou ressaisis le token. |
 | Conteneur `unhealthy` | L'app ne répond pas sur `/health` | `docker compose logs --tail 100 ronde`. |
+| Sans Docker : run en échec « spawn … EACCES » | Dossier de travail de `ronde-runner` pas en `711` | `chmod 711 /var/lib/ronde-runner /var/lib/ronde-runner/work`. |
+| Sans Docker : « Impossible de lancer claude : spawn claude ENOENT » | CLI hors de `/usr/local/bin` et `/usr/bin` | `CLAUDE_BIN=/chemin/vers/claude` dans `/etc/ronde/ronde.env`. |
+| Sans Docker : le service ne démarre pas | Dépendances non compilées, ou mauvais chemin de `node` | `journalctl -u ronde -n 50` ; relance `npm ci --omit=dev` dans `/opt/ronde`. |
 
 Commandes utiles :
 
 ```bash
+# Avec Docker
 docker compose logs -f ronde              # logs en direct
 docker compose exec ronde claude --version
 docker compose ps
+
+# Sans Docker
+journalctl -u ronde -f                    # logs en direct
+claude --version
+systemctl status ronde
 ```
 
 ## 14. Désinstallation
+
+Avec Docker :
 
 ```bash
 cd /chemin/vers/ronde
 docker compose down          # arrête et supprime le conteneur, garde les données
 docker compose down -v       # supprime AUSSI le volume /data : base et secret perdus
+```
+
+Sans Docker :
+
+```bash
+systemctl disable --now ronde
+rm /etc/systemd/system/ronde.service && systemctl daemon-reload
+rm -rf /var/lib/ronde            # base et secret : perdus
+rm -rf /etc/ronde /opt/ronde
+userdel -r ronde-runner
+npm uninstall -g @anthropic-ai/claude-code
 ```
 
 Si tu as installé le timer systemd :
@@ -439,4 +576,4 @@ npm test         # vitest, avec un faux binaire claude (test/fixtures/fake-claud
 npm run seed:example
 ```
 
-En dev, sans `RUNNER_UID`, `claude` tourne sous ton propre utilisateur, avec tes droits : n'autorise pas `Bash` sur une ronde de test sans y réfléchir.
+En dev, sans `RUNNER_USER` ni `RUNNER_UID`, `claude` tourne sous ton propre utilisateur, avec tes droits : n'autorise pas `Bash` sur une ronde de test sans y réfléchir.

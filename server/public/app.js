@@ -24,3 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const last = document.getElementById('derniere');
   if (last && !location.hash) last.scrollIntoView({ block: 'start' });
 });
+
+// Panneau « Claude » d'une ronde : on montre la fin de la conversation.
+document.addEventListener('DOMContentLoaded', () => {
+  const volet = document.querySelector('.volet-claude');
+  if (volet) volet.scrollTop = volet.scrollHeight;
+});

@@ -1,0 +1,47 @@
+# Installation sans Docker : voir INSTALL.md, « Installation native (Node + systemd) ».
+# Chemins par défaut : code dans /opt/ronde, base dans /var/lib/ronde,
+# claude lancé sous le compte « ronde-runner » (dossier /var/lib/ronde-runner).
+[Unit]
+Description=ronde : planificateur de tâches Claude
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ronde
+ExecStart=/usr/bin/node server/index.js
+
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DATA_DIR=/var/lib/ronde
+Environment=HOST_DATA_DIR=/opt/ronde/host-metrics
+Environment=RUNNER_USER=ronde-runner
+Environment=RUNNER_CWD=/var/lib/ronde-runner/work
+# Réglages propres à ton serveur (PUBLIC_URL, SMTP, TZ…) : ils priment sur ceux ci-dessus.
+EnvironmentFile=-/etc/ronde/ronde.env
+
+# Même modèle que l'image Docker : le process reste root, mais sans autre
+# capacité que changer d'utilisateur (pour lancer claude sous ronde-runner)
+# et arrêter ses runs. Sans CAP_DAC_OVERRIDE, il ne lit que ses propres fichiers.
+CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_KILL
+NoNewPrivileges=true
+StateDirectory=ronde
+StateDirectoryMode=0700
+
+# Système en lecture seule, y compris pour claude.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ronde /var/lib/ronde-runner
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

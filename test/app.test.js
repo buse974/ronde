@@ -140,3 +140,48 @@ describe('installation : rien n’est enregistré si le code est faux', () => {
     expect(store.getSetting('claude_token')).toBeNull();
   });
 });
+
+describe('configuration native', () => {
+  it('résout RUNNER_USER depuis /etc/passwd', async () => {
+    const { loadConfig } = await import('../server/config.js');
+    const c = loadConfig({ RUNNER_USER: 'root' });
+    expect(c.runner).toMatchObject({ uid: 0, gid: 0, home: '/root', cwd: '/root' });
+    expect(() => loadConfig({ RUNNER_USER: 'pas-un-utilisateur-xyz' })).toThrow(/introuvable/);
+    expect(loadConfig({ RUNNER_IN_CONTAINER: '', RONDE_IN_CONTAINER: 'false' }).inContainer).toBe(false);
+  });
+});
+
+describe('migration 007 : une conversation par ronde', () => {
+  it('garde la conversation la plus récente, crée les manquantes, supprime en cascade', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const Database = (await import('better-sqlite3')).default;
+    const { migrate } = await import('../server/db.js');
+    const src = path.join(import.meta.dirname, '..', 'server', 'migrations');
+    const v6 = fs.mkdtempSync(path.join(os.tmpdir(), 'ronde-mig-'));
+    for (const f of fs.readdirSync(src).filter((f) => Number.parseInt(f, 10) <= 6)) fs.copyFileSync(path.join(src, f), path.join(v6, f));
+
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    migrate(db, v6);
+    const now = new Date().toISOString();
+    const task = (name) => Number(db.prepare(`INSERT INTO tasks (name, prompt, cron, created_at, updated_at) VALUES (?, 'p', '', ?, ?)`).run(name, now, now).lastInsertRowid);
+    const a = task('A'), b = task('B');
+    const ask = (taskId, updated) => Number(db.prepare(`INSERT INTO asks (kind, status, title, messages, task_id, created_at, updated_at) VALUES ('tune', 'done', 't', '[{"role":"user","text":"x"}]', ?, ?, ?)`).run(taskId, now, updated).lastInsertRowid);
+    const vieille = ask(a, '2026-01-01T00:00:00Z'), recente = ask(a, '2026-02-01T00:00:00Z'), libre = ask(null, now), orpheline = ask(999, now);
+
+    migrate(db, src);
+    expect(db.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(7);
+    const of = (id) => db.prepare('SELECT task_id FROM asks WHERE id = ?').get(id)?.task_id;
+    expect(of(recente)).toBe(a);
+    expect(of(vieille)).toBeNull();
+    expect(of(libre)).toBeNull();
+    expect(of(orpheline)).toBeNull();
+    expect(db.prepare('SELECT messages FROM asks WHERE task_id = ?').get(b)).toEqual({ messages: '[]' });
+    expect(() => ask(a, now)).toThrow(/UNIQUE/);
+
+    db.prepare('DELETE FROM tasks WHERE id = ?').run(a);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM asks WHERE id = ?').get(recente).n).toBe(0);
+  });
+});

@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 function int(value, fallback) {
@@ -10,6 +11,17 @@ function bool(value, fallback) {
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 }
 
+/** uid, gid et dossier personnel d'un compte local (lu dans /etc/passwd). */
+export function lookupUser(name, passwdFile = '/etc/passwd') {
+  const line = fs
+    .readFileSync(passwdFile, 'utf8')
+    .split('\n')
+    .find((l) => l.split(':')[0] === name);
+  if (!line) throw new Error(`RUNNER_USER : utilisateur « ${name} » introuvable dans ${passwdFile}`);
+  const [, , uid, gid, , home] = line.split(':');
+  return { uid: Number(uid), gid: Number(gid), home };
+}
+
 /**
  * Configuration d'infrastructure, lue depuis l'environnement.
  * Les réglages fonctionnels (admin, token Claude, email d'alerte) vivent en base.
@@ -17,6 +29,8 @@ function bool(value, fallback) {
 export function loadConfig(env = process.env) {
   const production = env.NODE_ENV === 'production'; // cache des templates
   const dataDir = path.resolve(env.DATA_DIR || './data');
+  // Installation native : RUNNER_USER=ronde-runner évite d'écrire l'uid en dur.
+  const runnerUser = env.RUNNER_USER ? lookupUser(env.RUNNER_USER) : null;
 
   return {
     production,
@@ -37,15 +51,17 @@ export function loadConfig(env = process.env) {
     envClaudeToken: env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY || null,
 
     // Données de l'hôte lisibles par les rondes (scripts de host/).
-    hostDataDir: env.HOST_DATA_DIR || '/host-metrics',
+    hostDataDir: path.resolve(env.HOST_DATA_DIR || '/host-metrics'),
+    // Docker/Podman : Claude ne voit que le conteneur. En installation native, il est sur l'hôte.
+    inContainer: env.RONDE_IN_CONTAINER ? bool(env.RONDE_IN_CONTAINER, false) : fs.existsSync('/.dockerenv') || fs.existsSync('/run/.containerenv'),
 
     runner: {
       bin: env.CLAUDE_BIN || 'claude',
       path: env.RUNNER_PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-      uid: env.RUNNER_UID ? int(env.RUNNER_UID) : null,
-      gid: env.RUNNER_GID ? int(env.RUNNER_GID) : null,
-      home: env.RUNNER_HOME || null,
-      cwd: env.RUNNER_CWD || env.RUNNER_HOME || null,
+      uid: env.RUNNER_UID ? int(env.RUNNER_UID) : (runnerUser?.uid ?? null),
+      gid: env.RUNNER_GID ? int(env.RUNNER_GID) : (runnerUser?.gid ?? null),
+      home: env.RUNNER_HOME || runnerUser?.home || null,
+      cwd: env.RUNNER_CWD || env.RUNNER_HOME || runnerUser?.home || null,
       maxStdoutBytes: int(env.RUNNER_MAX_STDOUT, 2 * 1024 * 1024),
       maxStderrBytes: int(env.RUNNER_MAX_STDERR, 64 * 1024),
       killGraceMs: int(env.RUNNER_KILL_GRACE_MS, 10_000),

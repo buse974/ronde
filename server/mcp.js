@@ -3,7 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { TEMPLATES } from './examples.js';
+import { templatesFor } from './examples.js';
 import { classify, runClaude, toolName } from './runner.js';
 import { cronError, nextRuns } from './scheduler.js';
 import { taskSchema } from './validation.js';
@@ -120,7 +120,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
         instructions: [
           'ronde lance des « rondes » : des prompts Claude (claude -p) exécutés sur le serveur, planifiés (cron) ou manuels.',
           'Convention : le prompt demande de répondre exactement « RAS » s’il n’y a rien à signaler ; toute autre réponse est une alerte (mail).',
-          'Les données de l’hôte (disque, fail2ban…) sont lisibles dans /host-metrics avec l’outil Read : list_host_data montre ce qui existe.',
+          `Les données de l’hôte (disque, fail2ban…) sont lisibles dans ${hostDataDir} avec l’outil Read : list_host_data montre ce qui existe.`,
           'Démarche attendue : comprendre le besoin, regarder les données (list_host_data, list_templates), poser les questions utiles à l’utilisateur (seuils, fréquence, exceptions),',
           'essayer le prompt avec test_prompt et montrer le résultat et le coût, puis créer la ronde avec create_ronde seulement après accord explicite de l’utilisateur.',
         ].join(' '),
@@ -158,7 +158,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
     server.registerTool(
       'list_templates',
       { title: 'Modèles de rondes', description: 'Modèles prêts à l’emploi (prompt, outils, planification) et le script hôte dont ils dépendent.', annotations: { readOnlyHint: true } },
-      async () => ok(Object.entries(TEMPLATES).map(([key, t]) => ({ cle: key, ...t }))),
+      async () => ok(Object.entries(templatesFor(hostDataDir)).map(([key, t]) => ({ cle: key, ...t }))),
     );
 
     server.registerTool(
@@ -180,7 +180,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
       'list_host_data',
       {
         title: 'Données de l’hôte',
-        description: 'Liste les fichiers lisibles par les rondes dans /host-metrics (produits par les scripts hôte), avec leur âge et un aperçu.',
+        description: 'Liste les fichiers lisibles par les rondes dans ${hostDataDir} (produits par les scripts hôte), avec leur âge et un aperçu.',
         annotations: { readOnlyHint: true },
       },
       async () => {
@@ -195,16 +195,16 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
             const p = path.join(hostDataDir, f);
             try {
               const st = fs.statSync(p);
-              if (!st.isFile()) return { chemin: `/host-metrics/${f}`, type: 'autre (non lu)' };
+              if (!st.isFile()) return { chemin: p, type: 'autre (non lu)' };
               return {
-                chemin: `/host-metrics/${f}`,
+                chemin: p,
                 taille: st.size,
                 modifie: st.mtime.toISOString(),
                 age_minutes: Math.round((Date.now() - st.mtimeMs) / 60000),
                 apercu: clip(fs.readFileSync(p, 'utf8').split('\n').slice(0, 30).join('\n'), 3000),
               };
             } catch (err) {
-              return { chemin: `/host-metrics/${f}`, erreur: err.code || err.message };
+              return { chemin: p, erreur: err.code || err.message };
             }
           }),
         );

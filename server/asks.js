@@ -36,7 +36,7 @@ function hostDataListing(dir) {
       .filter((f) => !f.startsWith('.'))
       .map((f) => {
         const st = fs.statSync(`${dir}/${f}`);
-        return `- /host-metrics/${f} (${st.size} octets, modifié ${st.mtime.toISOString()})`;
+        return `- ${dir}/${f} (${st.size} octets, modifié ${st.mtime.toISOString()})`;
       })
       .join('\n');
   } catch {
@@ -48,13 +48,20 @@ function hostDataListing(dir) {
  * Prompt d'une exécution ponctuelle : un court contexte (où Claude tourne,
  * quelles données du serveur il peut lire), puis la demande telle quelle.
  */
-export function execPrompt({ text, hostDataDir, tools, history = [] }) {
+/** Où Claude tourne : conteneur (il ne voit pas l'hôte) ou directement sur le serveur. */
+export function whereContext({ hostDataDir, inContainer = true }) {
+  return inContainer
+    ? `tu tournes dans le conteneur de « ronde », sur un serveur Linux, sans personne pour te répondre. Tu ne vois pas directement le système de l'hôte : un df ou un ps ici ne décriraient que le conteneur. Les données de l'hôte sont relevées toutes les 15 minutes dans ${hostDataDir}, lisibles avec l'outil Read`
+    : `tu tournes directement sur le serveur Linux de « ronde », sous un compte de service sans privilège, sans personne pour te répondre. Des données relevées toutes les 15 minutes (disque, fail2ban…) sont dans ${hostDataDir}, lisibles avec l'outil Read`;
+}
+
+export function execPrompt({ text, hostDataDir, inContainer = true, tools, history = [] }) {
   const previous = history.length
     ? `Échanges précédents de cette conversation :\n\n${history
         .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi : ${m.text}`))
         .join('\n\n')}\n\n`
     : '';
-  return `Contexte : tu tournes dans le conteneur de « ronde », sur un serveur Linux, sans personne pour te répondre. Tu ne vois pas directement le système de l'hôte : un df ou un ps ici ne décriraient que le conteneur. Les données de l'hôte sont relevées toutes les 15 minutes dans /host-metrics, lisibles avec l'outil Read :
+  return `Contexte : ${whereContext({ hostDataDir, inContainer })} :
 ${hostDataListing(hostDataDir)}
 Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
 Réponds en français, de façon concise, en citant les chiffres et l'heure de la mesure. Si l'information demandée n'est pas dans ces données, dis-le simplement et indique quelle donnée il faudrait relever.
@@ -90,13 +97,13 @@ export function designPrompt({ messages, timezone, hostDataDir, allowedTools }) 
 
 Règles d'une ronde :
 - Le prompt de la ronde doit demander de répondre exactement « RAS » s'il n'y a rien à signaler. Toute autre réponse déclenche une alerte par mail : elle doit alors être courte et donner les chiffres utiles.
-- Les données du serveur sont lisibles dans /host-metrics avec l'outil Read. Fichiers disponibles :
+- Les données du serveur sont lisibles dans ${hostDataDir} avec l'outil Read. Fichiers disponibles :
 ${hostDataListing(hostDataDir)}
 - Outils qu'une ronde peut utiliser : ${allowedTools.join(', ')}. N'en propose pas d'autres.
 - Fréquence : expression cron à 5 champs, fuseau ${timezone}. Chaîne vide pour une ronde manuelle.
 
 Ta démarche :
-1. Si c'est utile, lis les fichiers de /host-metrics pour connaître les valeurs actuelles et proposer des seuils réalistes.
+1. Si c'est utile, lis les fichiers de ${hostDataDir} pour connaître les valeurs actuelles et proposer des seuils réalistes.
 2. S'il te manque une information importante (seuil, exception connue, fréquence), pose au plus 3 questions courtes.
 3. Sinon, propose la ronde complète et explique tes choix en 2 ou 3 phrases.
 
@@ -115,17 +122,17 @@ ${transcript}`;
  * passage d'une ronde existante. Claude explique et, si on le lui demande,
  * propose une nouvelle version de la ronde.
  */
-export function tunePrompt({ task, run, messages, timezone, hostDataDir, allowedTools }) {
+export function tunePrompt({ task, run, runCommented = true, messages, timezone, hostDataDir, allowedTools }) {
   const transcript = messages
     .map((m) => (m.role === 'user' ? `Administrateur : ${m.text}` : `Toi (tour précédent) : ${m.text}`))
     .join('\n\n');
   const cut = (t, n) => (t && t.length > n ? `${t.slice(0, n)}\n[… tronqué]` : t);
   const runPart = run
-    ? `Passage commenté (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
+    ? `${runCommented ? 'Passage commenté' : 'Dernier passage'} (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
 <reponse>
 ${cut(run.result, 6000) ?? '(aucune réponse)'}
 </reponse>${run.error ? `\nErreur : ${run.error}` : ''}`
-    : '(passage supprimé)';
+    : '(aucun passage pour l\'instant)';
   return `Tu aides l'administrateur de « ronde » à comprendre et régler une ronde existante. Une ronde est un prompt que Claude exécute seul, sans personne pour lui répondre, avec \`claude -p\`, sur ce serveur, à heure fixe (cron) ou à la demande. S'il n'y a rien à signaler, la ronde doit répondre exactement « RAS » ; toute autre réponse déclenche une alerte par mail.
 
 La ronde « ${task.name} » :
@@ -138,7 +145,7 @@ ${task.prompt}
 
 ${runPart}
 
-Les données du serveur sont lisibles dans /host-metrics avec l'outil Read :
+Les données du serveur sont lisibles dans ${hostDataDir} avec l'outil Read :
 ${hostDataListing(hostDataDir)}
 
 Ta démarche :
@@ -239,7 +246,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
     const tools = ask.allowed_tools;
     const question = ask.messages.at(-1).text;
-    const full = raw ? question : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, tools });
+    const full = raw ? question : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, inContainer: config.inContainer, tools });
     const { r, out } = await call(id, full, tools, 10, EXEC_TIMEOUT_SEC);
     addUsage(id, r);
     if (r.status === 'failed') {
@@ -264,15 +271,18 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     const allowed = ask.allowed_tools;
     const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed };
     let prompt;
-    if (ask.kind === 'tune') {
+    // Conversation rattachée à une ronde (réglage, ou conception terminée) : on parle de la ronde existante.
+    if (ask.task_id) {
       const row = q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id);
       if (!row) {
         update(id, { status: 'failed', error: 'La ronde a été supprimée.' });
         return;
       }
       const task = { ...row, allowed_tools: JSON.parse(row.allowed_tools) };
-      const run = ask.run_id ? q('SELECT * FROM runs WHERE id = ?').get(ask.run_id) : null;
-      prompt = tunePrompt({ ...ctx, task, run });
+      const run = ask.run_id
+        ? q('SELECT * FROM runs WHERE id = ?').get(ask.run_id)
+        : q(`SELECT * FROM runs WHERE task_id = ? AND status != 'running' ORDER BY started_at DESC, id DESC LIMIT 1`).get(ask.task_id);
+      prompt = tunePrompt({ ...ctx, task, run, runCommented: !!ask.run_id });
     } else {
       prompt = designPrompt(ctx);
     }
@@ -287,7 +297,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     let proposal = null;
     let proposalError = null;
     if (block?.type === 'proposal' && block.ronde) {
-      const base = ask.kind === 'tune' ? (q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) ?? {}) : {};
+      const base = ask.task_id ? (q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) ?? {}) : {};
       const candidate = {
         name: block.ronde.name ?? base.name ?? '',
         prompt: block.ronde.prompt ?? base.prompt ?? '',
@@ -303,7 +313,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     }
     const messages = [...ask.messages, { role: 'claude', text, proposal: !!proposal }];
     update(id, {
-      status: proposal ? 'proposal' : ask.kind === 'tune' && block?.type === 'answer' ? 'done' : 'question',
+      status: proposal ? 'proposal' : ask.task_id && block?.type === 'answer' ? 'done' : 'question',
       messages: JSON.stringify(messages),
       proposal: proposal ? JSON.stringify({ ...proposal, error: proposalError }) : ask.proposal ? JSON.stringify(ask.proposal) : null,
       error: null,
@@ -345,8 +355,10 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
         ).run(kind, title.slice(0, 200), JSON.stringify(tools), JSON.stringify(messages), taskId, runId, now, now).lastInsertRowid,
       );
       const done = launch(id, () => (kind === 'exec' ? runExec(id, raw) : runDesignTurn(id)));
-      // Ménage : on ne garde que les dernières demandes.
-      q(`DELETE FROM asks WHERE id NOT IN (SELECT id FROM asks ORDER BY created_at DESC, id DESC LIMIT ${HISTORY})`).run();
+      // Ménage : on ne garde que les dernières demandes libres. Celles rattachées à une ronde restent.
+      q(
+        `DELETE FROM asks WHERE task_id IS NULL AND id NOT IN (SELECT id FROM asks WHERE task_id IS NULL ORDER BY created_at DESC, id DESC LIMIT ${HISTORY})`,
+      ).run();
       return { id, done };
     },
 
@@ -356,8 +368,42 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
       if (!ask) return { error: 'Demande introuvable.' };
       if (busy || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
       update(id, { status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
-      return { done: launch(id, () => (ask.kind === 'exec' ? runExec(id, false) : runDesignTurn(id))) };
+      return { done: launch(id, () => (ask.kind === 'exec' && !ask.task_id ? runExec(id, false) : runDesignTurn(id))) };
     },
+
+    /**
+     * Rattache une conversation à la ronde (ou au oneshot) qu'elle a créée : elle devient
+     * LA conversation de la ronde, à la place de la conversation vide créée avec elle.
+     */
+    link(id, taskId) {
+      db.transaction(() => {
+        q('DELETE FROM asks WHERE task_id = ? AND id != ?').run(taskId, id);
+        update(id, { task_id: taskId, kind: 'tune', proposal: null, suggest_ronde: 0 });
+        q(`UPDATE asks SET status = 'done' WHERE id = ? AND status != 'running'`).run(id);
+      })();
+    },
+
+    /** Conversation de la ronde (une par ronde). */
+    forTask(taskId) {
+      return parse(q('SELECT * FROM asks WHERE task_id = ?').get(taskId));
+    },
+
+    /**
+     * Message à Claude à propos d'une ronde : continue sa conversation, ou en ouvre une.
+     * runId : passage commenté. Retourne { id, done } ou { error }.
+     */
+    talk(taskId, text, { runId = null, tools, title } = {}) {
+      const conv = this.forTask(taskId);
+      if (!conv) {
+        const started = this.start('tune', text, tools, { title, taskId, runId });
+        return started ?? { error: 'Claude répond déjà à une autre demande, réessaie dans un instant.' };
+      }
+      if (runId) q('UPDATE asks SET run_id = ? WHERE id = ?').run(runId, conv.id);
+      const r = this.reply(conv.id, text);
+      return r.error ? r : { id: conv.id, done: r.done };
+    },
+
+
 
     /** Arrête une demande en cours. Retourne true si elle tournait. */
     stop(id) {
@@ -378,7 +424,7 @@ export function createAsks({ db, config, claudeAuth, log = console }) {
     },
 
     recent(limit = 8) {
-      return q('SELECT * FROM asks ORDER BY created_at DESC, id DESC LIMIT ?').all(limit).map(parse);
+      return q("SELECT * FROM asks WHERE messages != '[]' ORDER BY created_at DESC, id DESC LIMIT ?").all(limit).map(parse);
     },
 
     recoverOrphans() {

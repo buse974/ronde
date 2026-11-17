@@ -21,7 +21,7 @@
   <textarea id="feedback" name="text" rows="2" required placeholder="Pourquoi cette réponse ? Ou : la prochaine fois, ignore /boot et réponds RAS sous 90 %."></textarea>
   <button type="submit" <%= it.busy ? 'disabled' : '' %>>Demander à Claude</button>
 </form>
-<p class="aide">Claude t'explique le résultat, ou te propose une version modifiée de la ronde, que tu appliques si elle te convient.</p>
+<p class="aide">Claude t'explique le résultat, ou te propose une version modifiée de la ronde, que tu appliques si elle te convient. La conversation continue sur la page de la ronde.</p>
 
 <dl class="fiche">
   <dt>Durée</dt><dd><%= h.duration(r.duration_ms) %></dd>

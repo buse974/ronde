@@ -54,7 +54,7 @@ const scheduler = startScheduler({ store, executor, timezone: config.timezone })
 const server = app.listen(config.port, () => {
   console.log(`[ronde] écoute sur le port ${config.port} (fuseau ${config.timezone})`);
   if (!mailer.enabled) console.warn('[ronde] SMTP_HOST absent : les alertes mail sont désactivées');
-  if (config.runner.uid == null) console.warn('[ronde] RUNNER_UID absent : claude tourne sous le même utilisateur que l’app (dev uniquement)');
+  if (config.runner.uid == null) console.warn('[ronde] RUNNER_UID / RUNNER_USER absent : claude tourne sous le même utilisateur que l’app (dev uniquement)');
 });
 
 function shutdown(signal) {
