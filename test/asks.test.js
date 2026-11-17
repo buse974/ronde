@@ -127,36 +127,53 @@ describe('Demander à Claude', () => {
     expect(ask.result).toBe('Paris.');
   }, 10_000);
 
-  it('une seule demande à la fois', async () => {
-    const { agent, asks } = await admin();
-    await form(agent, '/asks', { prompt: 'MODE:ok' });
-    const second = await form(agent, '/asks', { prompt: 'MODE:ok' });
-    expect(second.headers.location).toBe('/tasks?busy=1#demander');
+  it('plusieurs conversations en parallèle, une réponse à la fois par conversation', async () => {
+    const { agent, asks } = await admin(); // plafond par défaut : 3
+    const ids = [];
+    for (let i = 0; i < 3; i += 1) {
+      const r = await form(agent, '/asks', { prompt: 'MODE:slow' });
+      expect(r.headers.location).toMatch(/^\/asks\/\d+$/);
+      ids.push(Number(r.headers.location.split('/').pop()));
+    }
+    // Même conversation : refusé tant que Claude répond.
+    const again = await form(agent, `/asks/${ids[0]}/reply`, { text: 'et alors ?' });
+    expect(again.status).toBe(409);
+    // Plafond atteint : une 4e conversation attend.
+    const fourth = await form(agent, '/asks', { prompt: 'MODE:ok' });
+    expect(fourth.headers.location).toBe('/tasks?busy=1#demander');
     await asks.drain();
+    expect(ids.map((id) => asks.get(id).status)).toEqual(['done', 'done', 'done']);
+    expect(asks.busy).toBe(false);
   });
 
-  it('commente un passage : la conversation vit sur la page de la ronde', async () => {
+  it('depuis un passage : la conversation de la ronde est à côté, avec ce passage en contexte', async () => {
     const { agent, asks, store } = await admin();
     const taskId = store.createTask({ name: 'Disque', prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 85 %.', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 4, timeout_sec: 300, active: true });
     const runId = Number(store.db.prepare(`INSERT INTO runs (task_id, trigger, status, started_at, result) VALUES (?, 'cron', 'alert', ?, ?)`).run(taskId, new Date().toISOString(), 'Disque à 91 %.').lastInsertRowid);
 
-    expect((await agent.get(`/runs/${runId}`).set('Host', HOST)).text).toContain('Commenter ce résultat');
+    const runPage = (await agent.get(`/runs/${runId}`).set('Host', HOST)).text;
+    expect(runPage).not.toContain('Commenter ce résultat');
+    expect(runPage).toContain(`action="/tasks/${taskId}/ask"`);
+    expect(runPage).toContain(`name="run_id" value="${runId}"`);
     expect((await agent.get(`/tasks/${taskId}`).set('Host', HOST)).text).toContain('Demande pourquoi elle a répondu ça');
 
-    const res = await form(agent, `/runs/${runId}/feedback`, { text: 'pourquoi ? MODE:tunea' });
-    expect(res.headers.location).toBe(`/tasks/${taskId}#claude`);
+    const res = await form(agent, `/tasks/${taskId}/ask`, { text: 'pourquoi ? MODE:tunea', run_id: runId });
+    expect(res.headers.location).toBe(`/runs/${runId}#claude`);
     await asks.drain();
+    expect((await agent.get(`/runs/${runId}`).set('Host', HOST)).text).toContain('au-dessus du seuil de 85 %');
     const conv = asks.forTask(taskId);
     expect(conv).toMatchObject({ kind: 'tune', status: 'done', task_id: taskId, run_id: runId, proposal: null });
     const { tunePrompt } = await import('../server/asks.js');
     const p = tunePrompt({ task: store.getTask(taskId), run: store.getRun(runId), messages: [{ role: 'user', text: 'pourquoi ?' }], timezone: 'Europe/Paris', hostDataDir: '/nope', allowedTools: ['Read'] });
     expect(p).toContain('RAS sous 85 %');
     expect(p).toContain('Disque à 91 %.');
+    expect(p).toContain('Passage que l\'administrateur regarde');
     expect((await agent.get(`/tasks/${taskId}`).set('Host', HOST)).text).toContain('au-dessus du seuil de 85 %');
 
-    // Depuis le panneau de la ronde : même conversation.
+    // Depuis la page de la ronde : même conversation, et on ne regarde plus un passage précis.
     await form(agent, `/tasks/${taskId}/ask`, { text: 'alerte seulement au-dessus de 95 % MODE:tunep' });
     await asks.drain();
+    expect(asks.forTask(taskId).run_id).toBeNull();
     expect(asks.forTask(taskId)).toMatchObject({ id: conv.id, status: 'proposal', proposal: { prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 95 %.' } });
     expect(asks.forTask(taskId).messages.filter((m) => m.role !== 'history')).toHaveLength(4);
     expect((await agent.get(`/tasks/${taskId}`).set('Host', HOST)).text).toContain('/apply"');

@@ -292,12 +292,14 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
 
   app.get('/asks/:id/status', loadAsk, (req, res) => {
     if (req.ask.status !== 'running') return res.set('HX-Refresh', 'true').status(204).end();
-    res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id), back: req.query.back === 'task' ? 'task' : null });
+    res.view('partials/ask-running', { ask: req.ask, live: asks.live(req.ask.id), back: ['task', 'run'].includes(req.query.back) ? req.query.back : null });
   });
 
   app.post('/asks/:id/stop', loadAsk, (req, res) => {
     asks.stop(req.ask.id);
-    res.redirect(req.body.back === 'task' && req.ask.task_id ? `/tasks/${req.ask.task_id}#claude` : `/asks/${req.ask.id}`);
+    const a = req.ask;
+    if (req.body.back === 'run' && a.run_id) return res.redirect(`/runs/${a.run_id}#claude`);
+    res.redirect(req.body.back === 'task' && a.task_id ? `/tasks/${a.task_id}#claude` : `/asks/${a.id}`);
   });
 
   app.post('/asks/:id/reply', loadAsk, (req, res) => {
@@ -361,7 +363,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     const p = req.ask.proposal;
     if (!p) return res.redirect(`/asks/${req.ask.id}`);
     const started = asks.start('exec', p.prompt, p.allowed_tools ?? ['Read'], { raw: true, title: `Essai : ${p.name}` });
-    if (!started) return res.status(409).view('ask', { ask: req.ask, busy: true, error: 'Une demande est déjà en cours.' });
+    if (!started) return res.status(409).view('ask', { ask: req.ask, busy: true, error: 'Trop de conversations avec Claude en cours, réessaie dans un instant.' });
     res.redirect(`/asks/${started.id}`);
   });
 
@@ -402,16 +404,20 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       conv,
       live: conv ? asks.live(conv.id) : null,
       askBusy: asks.busy,
-      convError: req.query.claude === 'busy' ? 'Claude répond déjà à une autre demande, réessaie dans un instant.' : null,
+      convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
     });
   });
 
   // Parler à Claude depuis la page de la ronde (panneau « Claude »).
   app.post('/tasks/:id/ask', loadTask, (req, res) => {
+    // Depuis la page d'un passage : on reste sur ce passage, et Claude sait lequel on regarde.
+    const run = req.body.run_id ? store.getRun(Number(req.body.run_id)) : null;
+    const runId = run && run.task_id === req.task.id ? run.id : null;
+    const back = runId ? `/runs/${runId}` : `/tasks/${req.task.id}`;
     const text = String(req.body.text ?? '').trim().slice(0, 20_000);
-    if (!text) return res.redirect(`/tasks/${req.task.id}#claude`);
-    const r = asks.talk(req.task.id, text, { tools: mcpAllowedTools(store), title: `${req.task.name} : ${text}` });
-    res.redirect(`/tasks/${req.task.id}${r.error ? '?claude=busy' : ''}#claude`);
+    if (!text) return res.redirect(`${back}#claude`);
+    const r = asks.talk(req.task.id, text, { runId, tools: mcpAllowedTools(store), title: `${req.task.name} : ${text}` });
+    res.redirect(`${back}${r.error ? '?claude=busy' : ''}#claude`);
   });
 
   app.get('/tasks/:id/edit', loadTask, (req, res) => {
@@ -460,22 +466,22 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.get('/archives', (req, res) => res.view('archives', { tasks: store.listTasks({ archived: true }) }));
 
   // --- Runs --------------------------------------------------------------
-  // Commenter le résultat d'un passage : Claude explique ou propose de modifier la ronde.
-  app.post('/runs/:id/feedback', (req, res) => {
-    const run = store.getRun(Number(req.params.id));
-    if (!run) return res.status(404).view('error', { message: 'Run introuvable.' });
-    const text = String(req.body.text ?? '').trim().slice(0, 20_000);
-    if (!text) return res.redirect(`/runs/${run.id}`);
-    const r = asks.talk(run.task_id, text, { runId: run.id, tools: mcpAllowedTools(store), title: `${run.task_name} : ${text}` });
-    res.redirect(`/tasks/${run.task_id}${r.error ? '?claude=busy' : ''}#claude`);
-  });
-
   app.get('/runs/:id', (req, res) => {
     const run = store.getRun(Number(req.params.id));
     if (!run) return res.status(404).view('error', { message: 'Run introuvable.' });
     let pretty = null;
     if (run.raw_json) pretty = JSON.stringify(JSON.parse(run.raw_json), null, 2);
-    res.view('run', { run, pretty, busy: asks.busy });
+    // La conversation de la ronde reste à côté du passage.
+    const conv = asks.forTask(run.task_id);
+    res.view('run', {
+      run,
+      pretty,
+      task: store.getTask(run.task_id),
+      conv,
+      live: conv ? asks.live(conv.id) : null,
+      askBusy: asks.busy,
+      convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
+    });
   });
 
   // Bouton « Arrêter » : coupe claude et tout ce qu'il a lancé.

@@ -197,6 +197,7 @@ Avec Docker, les variables vont dans `.env`, à côté de `docker-compose.yml`. 
 | `CLAUDE_BIN` | `claude` | Chemin du CLI Claude Code, s'il n'est pas dans `/usr/local/bin` ou `/usr/bin`. |
 | `RUNNER_MAX_STDOUT` | `2097152` | Taille max de la sortie de `claude` (octets) ; au-delà, le run échoue. |
 | `RUNNER_KILL_GRACE_MS` | `10000` | Délai entre `SIGTERM` et `SIGKILL` à l'arrêt d'un run. |
+| `MAX_PARALLEL_ASKS` | `3` | Conversations avec Claude simultanées (chacune lance un `claude -p` d'environ 200 à 400 Mo). Les passages planifiés ne sont pas comptés. |
 
 Les variables `RUNNER_USER` (ou `RUNNER_UID` et `RUNNER_GID`), `RUNNER_HOME`, `RUNNER_CWD`, `DATA_DIR` et `NODE_ENV` sont fixées par l'image Docker ou par l'unité systemd : ne les change pas sans raison.
 

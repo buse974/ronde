@@ -142,7 +142,7 @@ export function tunePrompt({ task, run, runCommented = true, messages, timezone,
   const etat = task.archived_at ? `archivée depuis le ${task.archived_at.slice(0, 10)} (elle ne tourne plus)` : task.active ? 'active' : 'en pause';
   const cut = (t, n) => (t && t.length > n ? `${t.slice(0, n)}\n[… tronqué]` : t);
   const runPart = run
-    ? `${runCommented ? 'Passage commenté' : 'Dernier passage'} (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
+    ? `${runCommented ? 'Passage que l\'administrateur regarde en ce moment' : 'Dernier passage'} (${run.started_at}, ${run.trigger === 'manual' ? 'lancé à la main' : 'planifié'}, statut ${run.status}${run.num_turns != null ? `, ${run.num_turns} tours` : ''}) :
 <reponse>
 ${cut(run.result, 6000) ?? '(aucune réponse)'}
 </reponse>${run.error ? `\nErreur : ${run.error}` : ''}`
@@ -188,7 +188,10 @@ ${transcript}`;
 
 export function createAsks({ db, store, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
-  let busy = false;
+  // Plusieurs conversations en parallèle (plafond : mémoire du serveur, quota Claude),
+  // mais une seule réponse à la fois dans une même conversation.
+  const maxParallel = Math.max(1, config.maxParallelAsks ?? 3);
+  const running = new Set();
   const inFlight = new Set();
   /** État en direct des demandes en cours : étapes (outils) et texte partiel. */
   const live = new Map();
@@ -389,7 +392,7 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
   }
 
   function launch(id, job) {
-    busy = true;
+    running.add(id);
     const done = job()
       .catch((err) => {
         log.error(`[ronde] demande #${id} : ${err.stack || err}`);
@@ -400,7 +403,7 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
         }
       })
       .finally(() => {
-        busy = false;
+        running.delete(id);
         inFlight.delete(done);
       });
     inFlight.add(done);
@@ -408,13 +411,14 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
   }
 
   return {
+    /** Plafond atteint : aucune nouvelle conversation ne peut démarrer. */
     get busy() {
-      return busy;
+      return running.size >= maxParallel;
     },
 
-    /** Lance une demande. Retourne { id, done } ou null si une demande tourne déjà. */
+    /** Lance une demande. Retourne { id, done } ou null si le plafond est atteint. */
     start(kind, text, tools, { raw = false, title = text, history = [], taskId = null, runId = null } = {}) {
-      if (busy) return null;
+      if (this.busy) return null;
       const now = nowIso();
       const messages = [...history, { role: 'user', text }];
       const id = Number(
@@ -434,7 +438,8 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
     reply(id, text, { kind = null } = {}) {
       const ask = this.get(id);
       if (!ask) return { error: 'Demande introuvable.' };
-      if (busy || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
+      if (running.has(id) || ask.status === 'running') return { error: 'Claude réfléchit déjà, attends sa réponse.' };
+      if (this.busy) return { error: 'Trop de conversations avec Claude en cours, réessaie dans un instant.' };
       // kind : « design » pour transformer une question en conception de ronde, dans la même conversation.
       const k = kind ?? ask.kind;
       update(id, { kind: k, status: 'running', suggest_ronde: 0, messages: JSON.stringify([...ask.messages, { role: 'user', text }]) });
@@ -453,15 +458,15 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
 
     /**
      * Message à Claude à propos d'une ronde : continue sa conversation, ou en ouvre une.
-     * runId : passage commenté. Retourne { id, done } ou { error }.
+     * runId : passage que l'administrateur regarde (null : le dernier passage). Retourne { id, done } ou { error }.
      */
     talk(taskId, text, { runId = null, tools, title } = {}) {
       const conv = this.forTask(taskId);
       if (!conv) {
         const started = this.start('tune', text, tools, { title, taskId, runId });
-        return started ?? { error: 'Claude répond déjà à une autre demande, réessaie dans un instant.' };
+        return started ?? { error: 'Trop de conversations avec Claude en cours, réessaie dans un instant.' };
       }
-      if (runId) q('UPDATE asks SET run_id = ? WHERE id = ?').run(runId, conv.id);
+      q('UPDATE asks SET run_id = ? WHERE id = ?').run(runId, conv.id);
       const r = this.reply(conv.id, text);
       return r.error ? r : { id: conv.id, done: r.done };
     },

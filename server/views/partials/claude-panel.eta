@@ -21,7 +21,7 @@
             <div><%= m.text %></div>
           </div>
         <% }) %>
-        <% if (running) { %><%~ include('./ask-running', { ...it, ask: c, live: it.live, back: 'task' }) %><% } %>
+        <% if (running) { %><%~ include('./ask-running', { ...it, ask: c, live: it.live, back: it.run ? 'run' : 'task' }) %><% } %>
       </div>
       <% if (c.status === 'failed') { %><p class="note mal"><%= c.error %></p><% } %>
     <% } %>
@@ -49,7 +49,8 @@
   <% if (!running) { %>
   <form method="post" action="/tasks/<%= t.id %>/ask" class="demander-form saisie-volet">
     <label for="claude-text" class="masque">Écrire à Claude</label>
-    <textarea id="claude-text" name="text" rows="3" required placeholder="<%= t.archived_at ? 'Par exemple : remets-la active.' : vide ? 'Par exemple : pourquoi cette alerte ce matin ?' : 'Par exemple : ok, applique.' %>"></textarea>
+    <% if (it.run) { %><input type="hidden" name="run_id" value="<%= it.run.id %>"><% } %>
+    <textarea id="claude-text" name="text" rows="3" required placeholder="<%= it.run ? 'Par exemple : pourquoi cette réponse ?' : t.archived_at ? 'Par exemple : remets-la active.' : vide ? 'Par exemple : pourquoi cette alerte ce matin ?' : 'Par exemple : ok, applique.' %>"></textarea>
     <button type="submit" <%= it.askBusy ? 'disabled' : '' %>>Envoyer</button>
   </form>
   <% if (!vide) { %><p class="petit discret">Coût de la conversation : <%= h.cost(c.cost_usd) %>.</p><% } %>

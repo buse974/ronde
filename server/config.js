@@ -51,6 +51,8 @@ export function loadConfig(env = process.env) {
     envClaudeToken: env.CLAUDE_CODE_OAUTH_TOKEN || env.ANTHROPIC_API_KEY || null,
 
     // Données de l'hôte lisibles par les rondes (scripts de host/).
+    // Conversations avec Claude simultanées (les passages planifiés ne sont pas comptés).
+    maxParallelAsks: int(env.MAX_PARALLEL_ASKS, 3),
     hostDataDir: path.resolve(env.HOST_DATA_DIR || '/host-metrics'),
     // Docker/Podman : Claude ne voit que le conteneur. En installation native, il est sur l'hôte.
     inContainer: env.RONDE_IN_CONTAINER ? bool(env.RONDE_IN_CONTAINER, false) : fs.existsSync('/.dockerenv') || fs.existsSync('/run/.containerenv'),

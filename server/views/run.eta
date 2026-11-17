@@ -1,5 +1,8 @@
 <% layout('./layout', { ...it, title: 'Passage du ' + it.h.short(it.run.started_at) }) %>
 <% const r = it.run, h = it.h; %>
+<div class="ronde-page">
+<%~ include('./partials/claude-panel', it) %>
+<div class="ronde-centre">
 <p class="petit"><a href="/tasks/<%= r.task_id %>"><%= r.task_name %></a></p>
 
 <% if (r.status === 'running') { %>
@@ -16,13 +19,6 @@
 <h3>Réponse de Claude</h3>
 <div class="reponse <%= r.status %>"><%= r.result ?? '(aucune réponse)' %></div>
 
-<form method="post" action="/runs/<%= r.id %>/feedback" class="repondre demander-form commenter">
-  <label for="feedback">Commenter ce résultat</label>
-  <textarea id="feedback" name="text" rows="2" required placeholder="Pourquoi cette réponse ? Ou : la prochaine fois, ignore /boot et réponds RAS sous 90 %."></textarea>
-  <button type="submit" <%= it.busy ? 'disabled' : '' %>>Demander à Claude</button>
-</form>
-<p class="aide">Claude t'explique le résultat, ou te propose une version modifiée de la ronde, que tu appliques si elle te convient. La conversation continue sur la page de la ronde.</p>
-
 <dl class="fiche">
   <dt>Durée</dt><dd><%= h.duration(r.duration_ms) %></dd>
   <dt>Code de sortie</dt><dd><%= r.exit_code ?? '—' %>, is_error <%= r.is_error == null ? '—' : r.is_error ? 'true' : 'false' %></dd>
@@ -35,3 +31,5 @@
 <% if (r.stderr) { %><details><summary>Sortie d'erreur</summary><pre><%= r.stderr %></pre></details><% } %>
 <% if (it.pretty) { %><details><summary>JSON brut</summary><pre><%= it.pretty %></pre></details><% } %>
 <% } %>
+</div>
+</div>
