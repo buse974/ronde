@@ -11,8 +11,33 @@ export const CHANNEL_TYPES = {
   slack: { label: 'Slack', field: 'URL du webhook entrant Slack' },
   teams: { label: 'Teams', field: 'URL du webhook (Workflows Teams)' },
   webhook: { label: 'Webhook', field: 'URL qui reçoit le résultat en JSON' },
+  api: { label: 'API', field: 'URL de base de l’API', tool: true },
 };
-export const MODES = { alert: 'en cas d’alerte', always: 'à chaque passage' };
+export const MODES = { alert: 'en cas d’alerte', always: 'à chaque passage', requests: 'requêtes enregistrées', free: 'toutes les requêtes' };
+/** Où mettre la clé d'un canal API. {{cle}} est remplacé partout où il apparaît, dans tous les cas. */
+export const KEY_PLACES = {
+  bearer: 'en-tête Authorization: Bearer',
+  header: 'en-tête nommé',
+  query: 'paramètre d’URL nommé',
+  basic: 'Basic (identifiant:mot de passe)',
+  body: 'seulement là où la requête écrit {{cle}}',
+};
+const API_TIMEOUT_MS = 20_000;
+const API_MAX_BODY = 20_000;
+
+/** Forme comparable d'une requête : méthode, chemin, corps JSON normalisé. */
+export function requestKey({ methode = 'GET', chemin = '/', corps } = {}) {
+  let body = corps ?? '';
+  if (typeof body === 'string') {
+    try {
+      body = body.trim() ? JSON.parse(body) : '';
+    } catch {
+      body = body.trim();
+    }
+  }
+  const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+  return `${String(methode).toUpperCase()} ${chemin} ${JSON.stringify(canon(body))}`;
+}
 
 const EMAIL = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
 const SEND_TIMEOUT_MS = 10_000;
@@ -40,6 +65,22 @@ export function normalizeConfig(type, input = {}) {
     const bad = to.filter((a) => !EMAIL.test(a));
     if (bad.length) throw new Error(`adresse invalide : ${bad.join(', ')}.`);
     return { config: { to: [...new Set(to)] }, preview: [...new Set(to)].join(', ') };
+  }
+  if (type === 'api') {
+    const url = String(input.url ?? input.target ?? '').trim();
+    let u;
+    try {
+      u = new URL(url);
+    } catch {
+      throw new Error('URL invalide.');
+    }
+    if (!['https:', 'http:'].includes(u.protocol)) throw new Error('URL http(s) requise.');
+    const place = input.place && KEY_PLACES[input.place] ? input.place : 'bearer';
+    const keyName = String(input.keyName ?? input.key_name ?? '').trim();
+    if ((place === 'header' || place === 'query') && !/^[A-Za-z0-9_.-]{1,60}$/.test(keyName)) throw new Error('nom de l’en-tête ou du paramètre requis (lettres, chiffres, - _ .).');
+    const key = String(input.token ?? input.key ?? '').trim();
+    const where = place === 'header' || place === 'query' ? `${KEY_PLACES[place]} « ${keyName} »` : KEY_PLACES[place];
+    return { config: { url: url.replace(/\/+$/, ''), key, place, keyName }, preview: `${maskUrl(url)} · clé : ${key ? where : 'aucune'}` };
   }
   const url = String(input.url ?? input.target ?? '').trim();
   let u;
@@ -137,6 +178,40 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
     }
   }
 
+  /**
+   * Appel d'un canal API, construit par Claude, envoyé par ronde : la clé n'est
+   * ajoutée qu'ici ({{cle}}, en-tête, paramètre d'URL ou Basic) et masquée dans la réponse.
+   */
+  async function callApi(row, { methode = 'GET', chemin = '/', entetes = {}, corps } = {}) {
+    const c = secretOf(row);
+    const put = (v) => String(v).split('{{cle}}').join(c.key ?? '');
+    const base = new URL(`${c.url}/`);
+    const rel = String(chemin || '/');
+    if (/^[a-z]+:/i.test(rel) || rel.startsWith('//')) throw new Error('le chemin doit être relatif à l’URL du canal (ex. /api/etat).');
+    const target = new URL(put(rel.replace(/^\//, '')), base);
+    if (target.origin !== base.origin || !target.pathname.startsWith(base.pathname.replace(/\/$/, ''))) throw new Error('le chemin sort de l’URL du canal.');
+    if (c.place === 'query' && c.key) target.searchParams.set(c.keyName, c.key);
+    const headers = {};
+    for (const [k, v] of Object.entries(entetes ?? {})) {
+      if (!/^[A-Za-z0-9-]{1,60}$/.test(k) || /^(host|content-length)$/i.test(k)) continue;
+      headers[k.toLowerCase()] = put(v);
+    }
+    if (c.key && c.place === 'bearer') headers.authorization = `Bearer ${c.key}`;
+    if (c.key && c.place === 'header') headers[c.keyName.toLowerCase()] = c.key;
+    if (c.key && c.place === 'basic') headers.authorization = `Basic ${Buffer.from(c.key).toString('base64')}`;
+    const method = String(methode).toUpperCase();
+    let body;
+    if (corps != null && corps !== '' && !['GET', 'HEAD'].includes(method)) {
+      body = put(typeof corps === 'string' ? corps : JSON.stringify(corps));
+      if (!headers['content-type']) headers['content-type'] = typeof corps === 'string' && !/^\s*[[{]/.test(corps) ? 'text/plain' : 'application/json';
+    }
+    const res = await fetchImpl(target, { method, headers, body, redirect: 'manual', signal: AbortSignal.timeout(API_TIMEOUT_MS) });
+    let text = await res.text().catch(() => '');
+    if (c.key) text = text.split(c.key).join('•••');
+    if (text.length > API_MAX_BODY) text = `${text.slice(0, API_MAX_BODY)}\n[… tronqué]`;
+    return { statut: res.status, type: res.headers.get('content-type') ?? null, reponse: text };
+  }
+
   const byName = (name) => q('SELECT * FROM channels WHERE name = ?').get(String(name ?? '').trim());
 
   return {
@@ -148,6 +223,13 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
     },
     findByName(name) {
       return pub(byName(name));
+    },
+
+    /** Appel d'un canal API par son nom (le relais vérifie les droits avant). */
+    async call(name, request) {
+      const row = byName(name);
+      if (!row || row.type !== 'api') throw new Error(`canal API « ${name} » introuvable.`);
+      return callApi(row, request);
     },
 
     /** Crée (ou remplace, si le nom existe) un canal. Retourne le canal masqué. */
@@ -197,7 +279,14 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       if (!row) return { ok: false, error: 'canal introuvable.' };
       let error = null;
       try {
-        await deliver(row, { title: `Test du canal « ${row.name} »`, status: 'test', label: 'Test', text, url: config.publicUrl || null, task: null, runId: null });
+        if (row.type === 'api') {
+          // Un canal API se teste en joignant son URL : une réponse HTTP suffit, sauf clé refusée.
+          const r = await callApi(row, { methode: 'GET', chemin: '/' });
+          if (r.statut === 401 || r.statut === 403) error = `clé refusée (HTTP ${r.statut}).`;
+          else if (r.statut >= 500) error = `HTTP ${r.statut}.`;
+        } else {
+          await deliver(row, { title: `Test du canal « ${row.name} »`, status: 'test', label: 'Test', text, url: config.publicUrl || null, task: null, runId: null });
+        }
       } catch (err) {
         error = err.message;
       }
@@ -208,10 +297,10 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
     /** Canaux de sortie d'une ronde. */
     forTask(taskId) {
       return q(
-        `SELECT c.*, tc.mode FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? ORDER BY c.name COLLATE NOCASE`,
+        `SELECT c.*, tc.mode, tc.requests FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? ORDER BY c.name COLLATE NOCASE`,
       )
         .all(taskId)
-        .map((r) => ({ ...pub(r), mode: r.mode }));
+        .map((r) => ({ ...pub(r), mode: r.mode, requests: JSON.parse(r.requests ?? '[]') }));
     },
 
     /**
@@ -222,14 +311,21 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       const resolved = wanted.map((w) => {
         const row = w.id ? q('SELECT * FROM channels WHERE id = ?').get(w.id) : byName(w.name);
         if (!row) throw new Error(`canal « ${w.name ?? w.id} » introuvable (Réglages > Canaux).`);
+        if (row.type === 'api') {
+          const requests = (w.requests ?? []).map((x) => ({ methode: String(x.methode ?? 'GET').toUpperCase(), chemin: String(x.chemin ?? '/'), ...(x.corps != null ? { corps: x.corps } : {}) }));
+          const mode = w.mode === 'free' || w.mode === 'libre' ? 'free' : 'requests';
+          return { row, mode, requests };
+        }
         const mode = w.mode === 'always' || w.mode === 'toujours' ? 'always' : 'alert';
-        return { row, mode };
+        return { row, mode, requests: [] };
       });
-      const describe = (list) => (list.length ? list.map((c) => `${c.name} (${MODES[c.mode]})`).join(', ') : 'aucun');
+      const describe = (list) =>
+        list.length ? list.map((c) => `${c.name} (${MODES[c.mode]}${c.mode === 'requests' ? ` : ${c.requests.length}` : ''})`).join(', ') : 'aucun';
       const before = describe(this.forTask(taskId));
       db.transaction(() => {
         q('DELETE FROM task_channels WHERE task_id = ?').run(taskId);
-        for (const { row, mode } of resolved) q('INSERT INTO task_channels (task_id, channel_id, mode) VALUES (?, ?, ?)').run(taskId, row.id, mode);
+        for (const { row, mode, requests } of resolved)
+          q('INSERT INTO task_channels (task_id, channel_id, mode, requests) VALUES (?, ?, ?, ?)').run(taskId, row.id, mode, JSON.stringify(requests));
       })();
       const after = describe(this.forTask(taskId));
       if (before !== after) {
@@ -247,7 +343,7 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       if (run.stopped) return 0; // arrêté à la main : c'est toi qui l'as demandé
       const problem = run.status === 'alert' || run.status === 'failed';
       const m = runMessage({ task, run, publicUrl: config.publicUrl });
-      const attached = q('SELECT c.*, tc.mode FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ?').all(task.id);
+      const attached = q(`SELECT c.*, tc.mode FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? AND c.type != 'api'`).all(task.id);
       let sent = 0;
       if (attached.length) {
         for (const row of attached) {

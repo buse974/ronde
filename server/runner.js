@@ -13,11 +13,14 @@ export function toolName(rule) {
  *  --tools        : restreint les outils disponibles (vide = aucun)
  *  --allowedTools : autorise ces règles sans demande de permission
  */
-export function buildArgs({ allowedTools = [], maxTurns, stream = false }) {
-  const tools = [...new Set(allowedTools.map(toolName))];
+export function buildArgs({ allowedTools = [], maxTurns, stream = false, mcpConfig = null }) {
+  // --tools ne concerne que les outils intégrés : les outils MCP (mcp__…) sont autorisés à part.
+  const tools = [...new Set(allowedTools.map(toolName))].filter((t) => !t.startsWith('mcp__'));
   const format = stream ? ['--output-format', 'stream-json', '--verbose', '--include-partial-messages'] : ['--output-format', 'json'];
   const args = ['-p', ...format, '--max-turns', String(maxTurns), '--no-session-persistence'];
   args.push('--tools', tools.length ? tools.join(',') : '');
+  // Seul MCP permis : le relais des canaux de ronde (aucune autre configuration MCP n'est lue).
+  if (mcpConfig) args.push('--mcp-config', mcpConfig, '--strict-mcp-config');
   if (allowedTools.length) args.push('--allowedTools', ...allowedTools);
   return args;
 }
@@ -150,11 +153,11 @@ function capped(limit) {
  * JSON) est transmis au fil de l'eau ; stdout contient alors le seul événement
  * final « result », ce qui garde le reste du code identique.
  */
-export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone, onEvent, signal }) {
+export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone, onEvent, signal, mcpConfig = null }) {
   const r = config.runner;
   const started = Date.now();
   const stream = typeof onEvent === 'function';
-  const args = buildArgs({ allowedTools, maxTurns, stream });
+  const args = buildArgs({ allowedTools, maxTurns, stream, mcpConfig });
   const options = {
     cwd: r.cwd || undefined,
     env: buildEnv({ auth, home: r.home, timezone, path: r.path }),

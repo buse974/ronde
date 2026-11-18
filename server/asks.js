@@ -64,9 +64,20 @@ export function transcriptOf(messages) {
 
 /** Les canaux, tels que Claude les voit : noms et types, jamais les accès. */
 export function channelsContext(available = [], current = null) {
-  const list = available.length ? available.map((c) => `« ${c.name} » (${c.typeLabel ?? c.type})`).join(', ') : 'aucun (l’administrateur les ajoute dans Réglages > Canaux)';
+  const out = available.filter((c) => c.type !== 'api');
+  const api = available.filter((c) => c.type === 'api');
+  const list = out.length ? out.map((c) => `« ${c.name} » (${c.typeLabel ?? c.type})`).join(', ') : 'aucun (l’administrateur les ajoute dans Réglages > Canaux)';
   let text = `Canaux d'envoi configurés : ${list}. C'est ronde qui envoie la réponse d'une ronde sur ses canaux, « en cas d'alerte » (réponse autre que RAS, ou échec) ou « à chaque passage » ; sans canal, les alertes partent au mail par défaut des réglages. Tu ne peux pas créer de canal, seulement en brancher un existant.`;
-  if (current) text += `\nCanaux de cette ronde : ${current.length ? current.map((c) => `« ${c.name} » (${c.mode === 'always' ? 'à chaque passage' : 'en cas d’alerte'})`).join(', ') : 'aucun'}.`;
+  if (api.length) {
+    text += `\nCanaux API configurés : ${api.map((c) => `« ${c.name} »`).join(', ')}. Ici, en conversation avec l'administrateur, tu peux les essayer avec l'outil appeler_canal (requêtes libres). Démarche : si besoin, lis la documentation de l'API avec WebFetch ; essaie la requête et montre le résultat ; ne déclenche une action qui change quelque chose (allumer, éteindre, écrire…) que si l'administrateur te l'a demandé. Quand une requête fait ce qu'il faut et que l'administrateur valide : branche le canal sur la ronde avec cette requête enregistrée ("requetes": [{"methode": "...", "chemin": "...", "corps": ...}]) et écris dans le prompt de la ronde l'appel exact à faire avec l'outil appeler_canal (canal, méthode, chemin, corps). La clé n'apparaît jamais : si l'API la veut dans la requête, écris {{cle}}. Pendant un passage, seule une requête enregistrée à l'identique passe.`;
+  }
+  if (current) {
+    const fmt = (c) =>
+      c.type === 'api'
+        ? `« ${c.name} » (API, ${c.mode === 'free' ? 'toutes les requêtes' : `requêtes enregistrées : ${(c.requests ?? []).map((r) => `${r.methode} ${r.chemin}${r.corps != null ? ` ${typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps)}` : ''}`).join(' | ') || 'aucune'}`})`
+        : `« ${c.name} » (${c.mode === 'always' ? 'à chaque passage' : 'en cas d’alerte'})`;
+    text += `\nCanaux de cette ronde : ${current.length ? current.map(fmt).join(', ') : 'aucun'}.`;
+  }
   return text;
 }
 
@@ -101,6 +112,8 @@ export function describeTool(name, input = {}) {
   if (name === 'Read') return `Lecture de ${host(input.file_path)}`;
   if (name === 'Glob') return `Recherche de fichiers : ${input.pattern ?? ''}`;
   if (name === 'Grep') return `Recherche de « ${input.pattern ?? ''} »${input.path ? ` dans ${host(input.path)}` : ''}`;
+  if (name === 'WebFetch') return `Lecture de ${input.url ?? 'une page web'}`;
+  if (name.endsWith('__appeler_canal')) return `Appel du canal « ${input.canal ?? '?'} » : ${input.methode ?? 'GET'} ${input.chemin ?? '/'}`;
   return `Outil ${name}`;
 }
 
@@ -121,7 +134,7 @@ Règles d'une ronde :
 ${hostDataListing(hostDataDir)}
 - Outils qu'une ronde peut utiliser : ${allowedTools.join(', ')}. N'en propose pas d'autres.
 - Fréquence : expression cron à 5 champs, fuseau ${timezone}. Chaîne vide pour une ronde manuelle.
-- ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}] à la ronde proposée.
+- ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ou si la ronde appelle un canal API, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [...]}] à la ronde proposée.
 
 Ta démarche :
 1. Si c'est utile, lis les fichiers de ${hostDataDir} pour connaître les valeurs actuelles et proposer des seuils réalistes.
@@ -188,7 +201,7 @@ soit
 soit
 {"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
 soit
-{"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}]} (liste complète ; [] pour n'en garder aucun)
+{"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [{"methode": "POST", "chemin": "/...", "corps": {...}}]}]} (liste complète, canaux déjà branchés compris ; [] pour n'en garder aucun)
 soit
 {"type": "action", "action": "pause"} (ou "reprendre", "archiver", {"type": "action", "action": "restaurer", "active": true})
 (dans une proposition ou une modification, reprends tous les champs, y compris ceux qui ne changent pas).
@@ -198,7 +211,7 @@ Conversation jusqu'ici :
 ${transcript}`;
 }
 
-export function createAsks({ db, store, channels = null, config, claudeAuth, log = console }) {
+export function createAsks({ db, store, channels = null, relay = null, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
   // Plusieurs conversations en parallèle (plafond : mémoire du serveur, quota Claude),
   // mais une seule réponse à la fois dans une même conversation.
@@ -262,17 +275,30 @@ export function createAsks({ db, store, channels = null, config, claudeAuth, log
     );
   }
 
-  async function call(id, prompt, allowedTools, maxTurns, timeoutSec) {
+  async function call(id, prompt, allowedTools, maxTurns, timeoutSec, { apiChannels = false } = {}) {
     const auth = claudeAuth.resolve();
     if (!auth) return { r: { status: 'failed', error: 'Aucun token Claude configuré (Réglages).' }, out: null };
     const ctrl = new AbortController();
     controllers.set(id, ctrl);
+    // En conversation (avec l'administrateur, en direct) : tous les canaux API, requêtes libres, pour essayer.
+    const api = apiChannels && channels && relay ? channels.list().filter((c) => c.type === 'api') : [];
+    const session = relay?.open({ label: `conversation #${id}`, allowed: api.map((c) => ({ name: c.name, free: true })) });
     try {
       const out = await runClaude({
-        prompt, allowedTools, maxTurns, timeoutSec, auth, config, timezone: config.timezone, onEvent: onEventFor(id), signal: ctrl.signal,
+        prompt,
+        allowedTools: session ? [...allowedTools, session.tool] : allowedTools,
+        mcpConfig: session?.mcpConfig ?? null,
+        maxTurns,
+        timeoutSec,
+        auth,
+        config,
+        timezone: config.timezone,
+        onEvent: onEventFor(id),
+        signal: ctrl.signal,
       });
       return { r: classify(out), out };
     } finally {
+      session?.close();
       live.delete(id);
       controllers.delete(id);
     }
@@ -331,7 +357,9 @@ export function createAsks({ db, store, channels = null, config, claudeAuth, log
     return list.map((c) => {
       const name = c.nom ?? c.name;
       if (!channels.findByName(name)) throw new Error(`canal « ${name} » introuvable (Réglages > Canaux).`);
-      return { name, mode: ['toujours', 'always'].includes(c.quand ?? c.mode) ? 'always' : 'alert' };
+      const quand = c.quand ?? c.mode;
+      if (Array.isArray(c.requetes) || quand === 'libre') return { name, mode: quand === 'libre' ? 'free' : 'requests', requests: c.requetes ?? [] };
+      return { name, mode: ['toujours', 'always'].includes(quand) ? 'always' : 'alert' };
     });
   }
 
@@ -384,7 +412,8 @@ export function createAsks({ db, store, channels = null, config, claudeAuth, log
     } else {
       prompt = designPrompt(ctx);
     }
-    const { r } = await call(id, prompt, ['Read', 'Glob'], 8, DESIGN_TIMEOUT_SEC);
+    // Conception et réglage : lire la doc d'une API (WebFetch) et essayer ses canaux.
+    const { r } = await call(id, prompt, ['Read', 'Glob', 'WebFetch'], 12, DESIGN_TIMEOUT_SEC, { apiChannels: true });
     addUsage(id, r);
     if (r.status === 'failed') {
       update(id, { status: 'failed', error: r.error });

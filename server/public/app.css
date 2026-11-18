@@ -596,3 +596,7 @@ h2.genre.oneshot::before { background: var(--oneshot); }
 .canaux-ronde form { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
 .ligne-canal { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 0; font-weight: 500; }
 .ligne-canal select { width: auto; margin: 0; }
+
+.type.canal-api { color: var(--ras); background: color-mix(in srgb, var(--ras) 14%, transparent); }
+.config-ronde ul.requetes { margin: 0.3rem 0 0.4rem; padding-left: 1.1rem; font-size: var(--step--1); }
+.config-ronde ul.requetes code { white-space: pre-wrap; word-break: break-all; }

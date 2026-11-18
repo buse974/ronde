@@ -35,7 +35,7 @@ export function isDue(expr, timezone, minuteStart) {
  * Exécute une tâche : crée le run (sauf si un run est déjà en cours), lance
  * claude, enregistre le résultat et envoie l'alerte si besoin.
  */
-export function createExecutor({ store, config, claudeAuth, channels, log = console }) {
+export function createExecutor({ store, config, claudeAuth, channels, relay = null, log = console }) {
   const inFlight = new Set();
   /** Passages en cours : runId → AbortController (bouton « Arrêter »). */
   const controllers = new Map();
@@ -48,10 +48,14 @@ export function createExecutor({ store, config, claudeAuth, channels, log = cons
     } else {
       const ctrl = new AbortController();
       controllers.set(runId, ctrl);
+      // Canaux API de la ronde : outil appeler_canal, limité aux requêtes enregistrées (ou libre).
+      const api = channels.forTask(task.id).filter((c) => c.type === 'api');
+      const session = relay?.open({ label: `passage #${runId}`, allowed: api.map((c) => ({ name: c.name, free: c.mode === 'free', requests: c.requests })) });
       const res = await runClaude({
         signal: ctrl.signal,
         prompt: task.prompt,
-        allowedTools: task.allowed_tools,
+        mcpConfig: session?.mcpConfig ?? null,
+        allowedTools: session ? [...task.allowed_tools, session.tool] : task.allowed_tools,
         maxTurns: task.max_turns,
         timeoutSec: task.timeout_sec,
         auth,
@@ -59,6 +63,7 @@ export function createExecutor({ store, config, claudeAuth, channels, log = cons
         timezone: config.timezone,
       });
       controllers.delete(runId);
+      session?.close();
       outcome = { ...classify(res), stderr: res.stderr, duration_ms: res.durationMs, token_type: auth.type, stopped: res.stopped };
       // Sans alerte (oneshot) : une réponse autre que RAS est une simple réponse.
       if (task.notify === false && outcome.status === 'alert') outcome.status = 'done';

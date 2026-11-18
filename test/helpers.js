@@ -7,6 +7,7 @@ import { createClaudeAuth } from '../server/claude-auth.js';
 import { createExecutor } from '../server/scheduler.js';
 import { createApp } from '../server/app.js';
 import { createChannels } from '../server/channels.js';
+import { createRelay } from '../server/relay.js';
 
 export const FAKE_CLAUDE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'fake-claude.js');
 export const OAUTH = 'sk-ant-oat01-' + 'x'.repeat(40);
@@ -41,14 +42,21 @@ export function setup({ envToken = null, token = OAUTH, env = {} } = {}) {
   // Faux réseau : les envois des canaux Slack / Teams / webhook sont enregistrés ici.
   const posts = [];
   const fetchImpl = async (url, init) => {
-    posts.push({ url, body: JSON.parse(init.body), headers: init.headers });
+    let body = init.body;
+    try {
+      body = JSON.parse(init.body);
+    } catch {
+      /* corps texte, ou absent */
+    }
+    posts.push({ url: String(url), method: init.method ?? 'POST', body, headers: init.headers });
     if (String(url).includes('echec')) return new Response('nope', { status: 500 });
     return new Response('ok', { status: 200 });
   };
   const channels = createChannels({ store, appSecret: 'test-secret', mailer, config, fetchImpl, log: silentLog });
-  const executor = createExecutor({ store, config, claudeAuth, channels, log: silentLog });
-  const app = createApp({ store, config, claudeAuth, mailer, executor, channels, setupCode: 'ABCDE-12345' });
-  return { config, store, claudeAuth, mailer, executor, channels, posts, app };
+  const relay = createRelay({ channels, config, log: silentLog });
+  const executor = createExecutor({ store, config, claudeAuth, channels, relay, log: silentLog });
+  const app = createApp({ store, config, claudeAuth, mailer, executor, channels, relay, setupCode: 'ABCDE-12345' });
+  return { config, store, claudeAuth, mailer, executor, channels, relay, posts, app };
 }
 
 export const task = (over = {}) => ({

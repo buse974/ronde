@@ -20,7 +20,7 @@ import {
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { ASK_TOOLS, createAsks } from './asks.js';
-import { CHANNEL_TYPES, MODES } from './channels.js';
+import { CHANNEL_TYPES, KEY_PLACES, MODES } from './channels.js';
 import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
@@ -59,13 +59,13 @@ function constantTimeEqual(a, b) {
  * @param {ReturnType<import('./scheduler.js').createExecutor>} deps.executor
  * @param {string|null} deps.setupCode  code d'installation (affiché dans les logs)
  */
-export function createApp({ store, config, claudeAuth, mailer, executor, channels, setupCode }) {
+export function createApp({ store, config, claudeAuth, mailer, executor, channels, relay = null, setupCode }) {
   const app = express();
   const eta = new Eta({ views: path.join(ROOT, 'views'), cache: config.production });
   const h = createHelpers(config.timezone);
   const limiter = createRateLimiter();
   const oauth = createOAuthProvider({ db: store.db });
-  const asks = createAsks({ db: store.db, store, channels, config, claudeAuth });
+  const asks = createAsks({ db: store.db, store, channels, relay, config, claudeAuth });
   asks.recoverOrphans();
   app.locals.asks = asks;
   const mcp = mcpEndpoint(config);
@@ -88,6 +88,9 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
 
   app.get('/health', (req, res) => res.json({ status: 'ok', service: 'ronde', type: 'app' }));
   app.use(express.static(path.join(ROOT, 'public'), { maxAge: config.production ? '1d' : 0 }));
+  // --- Relais des canaux API : MCP interne, joint par claude -p sur la machine elle-même.
+  if (relay) app.post('/relay/mcp', express.json({ limit: '1mb' }), asyncRoute((req, res) => relay.handle(req, res)));
+
   // --- MCP (OAuth 2.1) : monté avant le contrôle Origin, car Claude Code
   // appelle ces routes hors navigateur. --------------------------------------
   if (mcp.enabled) {
@@ -464,10 +467,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
   });
 
   app.post('/tasks/:id/channels', loadTask, (req, res) => {
+    // Les requêtes enregistrées d'un canal API sont gardées : la popup ne change que le mode.
+    const current = channels.forTask(req.task.id);
     const wanted = channels
       .list()
-      .map((c) => ({ id: c.id, mode: req.body[`mode_${c.id}`] }))
-      .filter((w) => w.mode === 'alert' || w.mode === 'always');
+      .map((c) => ({ id: c.id, mode: req.body[`mode_${c.id}`], requests: current.find((x) => x.id === c.id)?.requests ?? [] }))
+      .filter((w) => ['alert', 'always', 'requests', 'free'].includes(w.mode));
     channels.setForTask(req.task.id, wanted, { by: 'ui' });
     res.redirect(`/tasks/${req.task.id}`);
   });
@@ -528,6 +533,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
       mcpTools: mcpAllowedTools(store),
       channels: channels.list(),
       channelTypes: CHANNEL_TYPES,
+      keyPlaces: KEY_PLACES,
       defaultMcpTools: DEFAULT_MCP_TOOLS,
       errors: {},
       notice: null,
@@ -598,7 +604,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
       const form = { name: req.body.name, type: req.body.type };
       let c;
       try {
-        c = channels.save({ name: req.body.name, type: req.body.type, target: req.body.target, token: req.body.token });
+        c = channels.save({ name: req.body.name, type: req.body.type, target: req.body.target, token: req.body.token, place: req.body.place, keyName: req.body.key_name });
       } catch (err) {
         res.status(400);
         return settingsView(res, { errors: { channel: `Canal non enregistré : ${err.message}` }, channelForm: form });

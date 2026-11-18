@@ -81,6 +81,10 @@ Un **canal**, c'est là où ronde envoie la réponse d'une ronde : **mail**, **S
 
 Chaque ronde choisit ses canaux, **en cas d'alerte** (réponse autre que RAS, ou échec) ou **à chaque passage** : bouton **Configuration** de la ronde, ou demande à Claude (« envoie le résumé sur Slack chaque matin »). C'est toujours ronde qui envoie, jamais Claude.
 
+Un canal **API** donne à une ronde le droit d'appeler une API HTTP (REST, JSON-RPC, GraphQL… : Jeedom, Home Assistant…). Le canal porte l'adresse et la clé ; Claude construit la requête et l'envoie avec l'outil `appeler_canal`, servi par un relais interne de ronde qui ajoute la clé (en-tête, paramètre d'URL, Basic, ou `{{cle}}` dans le corps) et la masque dans les réponses. Claude ne voit jamais la clé et n'a ni `Bash` ni `curl`. En conversation, il essaie librement avec toi (et lit la doc de l'API) ; quand une requête fait ce qu'il faut, il l'enregistre sur la ronde et l'écrit dans son prompt. Pendant un passage, seules les requêtes enregistrées passent. Si la clé change, tu la changes une fois dans le canal.
+
+> Jeedom : la clé à donner est celle de **Réglages > Système > Configuration > API** (64 caractères), pas la valeur chiffrée stockée en base.
+
 Sans canal, une ronde envoie ses alertes au **mail par défaut** des Réglages. Pour les mails, renseigne un relais SMTP dans `.env`, ou `/etc/ronde/ronde.env` sans Docker (voir `.env.example`).
 
 ## Piloter ronde depuis Claude (MCP)

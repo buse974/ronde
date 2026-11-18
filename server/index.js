@@ -8,6 +8,7 @@ import { loadAppSecret } from './secrets.js';
 import { createClaudeAuth } from './claude-auth.js';
 import { createMailer } from './mailer.js';
 import { createChannels } from './channels.js';
+import { createRelay } from './relay.js';
 import { createExecutor, startScheduler } from './scheduler.js';
 import { isSetupDone } from './auth.js';
 import { createApp } from './app.js';
@@ -34,7 +35,8 @@ store.purgeSessions();
 const claudeAuth = createClaudeAuth({ store, appSecret, envToken: config.envClaudeToken });
 const mailer = createMailer(config);
 const channels = createChannels({ store, appSecret, mailer, config });
-const executor = createExecutor({ store, config, claudeAuth, channels });
+const relay = createRelay({ channels, config });
+const executor = createExecutor({ store, config, claudeAuth, channels, relay });
 
 // Code d'installation : exigé par l'écran de premier accès, affiché uniquement dans les logs.
 let setupCode = null;
@@ -50,7 +52,7 @@ if (!isSetupDone(store)) {
   console.log('');
 }
 
-const app = createApp({ store, config, claudeAuth, mailer, executor, channels, setupCode });
+const app = createApp({ store, config, claudeAuth, mailer, executor, channels, relay, setupCode });
 const scheduler = startScheduler({ store, executor, timezone: config.timezone });
 
 const server = app.listen(config.port, () => {

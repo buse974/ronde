@@ -307,18 +307,20 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
       {
         title: 'Créer un canal',
         description:
-          'Crée un canal d’envoi, ou le remplace si le nom existe, puis envoie un message de test. type : mail (destination = adresses séparées par des virgules), slack (URL https://hooks.slack.com/…), teams (URL du webhook Workflows), webhook (URL qui reçoit le résultat en JSON, jeton Bearer facultatif). Les accès sont chiffrés et ne sont plus jamais renvoyés.',
+          'Crée un canal, ou le remplace si le nom existe, puis le teste. type : mail (destination = adresses séparées par des virgules), slack (URL https://hooks.slack.com/…), teams (URL du webhook Workflows), webhook (URL qui reçoit le résultat en JSON, jeton Bearer facultatif), api (destination = URL de base de l’API, jeton = sa clé, emplacement_cle = bearer | header | query | basic | body, nom_cle = nom de l’en-tête ou du paramètre ; avec body, la requête écrit {{cle}}). Les accès sont chiffrés et ne sont plus jamais renvoyés.',
         inputSchema: {
           nom: z.string().min(1).max(60),
-          type: z.enum(['mail', 'slack', 'teams', 'webhook']),
+          type: z.enum(['mail', 'slack', 'teams', 'webhook', 'api']),
           destination: z.string().min(1),
           jeton: z.string().optional(),
+          emplacement_cle: z.enum(['bearer', 'header', 'query', 'basic', 'body']).optional(),
+          nom_cle: z.string().optional(),
         },
       },
-      async ({ nom, type, destination, jeton }) => {
+      async ({ nom, type, destination, jeton, emplacement_cle, nom_cle }) => {
         let c;
         try {
-          c = channels.save({ name: nom, type, target: destination, token: jeton });
+          c = channels.save({ name: nom, type, target: destination, token: jeton, place: emplacement_cle, keyName: nom_cle });
         } catch (err) {
           return fail(`Canal non enregistré : ${err.message}`);
         }

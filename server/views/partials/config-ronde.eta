@@ -11,7 +11,9 @@
     <dt>Type</dt><dd><span class="type <%= t.cron || t.run_at ? 'ronde' : 'oneshot' %>"><%= t.cron || t.run_at ? 'Ronde' : 'Oneshot' %></span></dd>
     <dt>État</dt><dd><span class="etat-ronde <%= t.archived_at ? 'archivee' : t.active ? 'active' : 'pause' %>"><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></span></dd>
     <dt>Déclenchement</dt><dd><% if (t.cron) { %><%= h.cronText(t.cron) %> <code><%= t.cron %></code><% if (t.active && !t.archived_at) { %><br><span class="discret">Prochain passage : <%= h.nextRun(t.cron) %></span><% } %><% } else if (t.run_at) { %><%= h.triggerText(t) %><% } else { %>À la demande (oneshot)<% } %></dd>
-    <dt>Envoi</dt><dd><% if ((it.taskChannels || []).length) { %><% it.taskChannels.forEach((c, i) => { %><%= i ? ', ' : '' %><span class="type canal-<%= c.type %>"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% }) %><% } else if (!t.notify) { %>Aucun : simple réponse, rien n'est envoyé<% } else if (it.alertEmail) { %>Mail d'alerte par défaut, à <strong><%= it.alertEmail %></strong>, en cas d'alerte ou d'échec<% } else { %>Rien : aucun canal ni mail d'alerte, <a href="/settings#canaux">à régler</a><% } %></dd>
+    <% const envois = (it.taskChannels || []).filter((c) => c.type !== 'api'), apis = (it.taskChannels || []).filter((c) => c.type === 'api'); %>
+    <% if (apis.length) { %><dt>API</dt><dd><% apis.forEach((c) => { %><div><span class="type canal-api"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% if (c.mode === 'requests') { %><ul class="requetes"><% c.requests.forEach((r) => { %><li><code><%= r.methode %> <%= r.chemin %><%= r.corps != null ? ' ' + (typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps)) : '' %></code></li><% }) %><% if (!c.requests.length) { %><li class="discret">aucune : demande à Claude d'en essayer une et de l'enregistrer</li><% } %></ul><% } %></div><% }) %></dd><% } %>
+    <dt>Envoi</dt><dd><% if (envois.length) { %><% envois.forEach((c, i) => { %><%= i ? ', ' : '' %><span class="type canal-<%= c.type %>"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% }) %><% } else if (!t.notify) { %>Aucun : simple réponse, rien n'est envoyé<% } else if (it.alertEmail) { %>Mail d'alerte par défaut, à <strong><%= it.alertEmail %></strong>, en cas d'alerte ou d'échec<% } else { %>Rien : aucun canal ni mail d'alerte, <a href="/settings#canaux">à régler</a><% } %></dd>
     <dt>Outils</dt><dd><%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %></dd>
     <dt>Limites</dt><dd><%= t.max_turns %> tours maximum, <%= t.timeout_sec %> s maximum</dd>
     <dt>Créée</dt><dd><%= h.short(t.created_at) %><%= t.created_via === 'mcp' ? ', via MCP' : '' %> · modifiée <%= h.short(t.updated_at) %></dd>
@@ -23,8 +25,13 @@
       <label class="ligne-canal"><span><span class="type canal-<%= c.type %>"><%= c.typeLabel %></span> <%= c.name %></span>
         <select name="mode_<%= c.id %>">
           <option value="" <%= !cur ? 'selected' : '' %>>non</option>
+          <% if (c.type === 'api') { %>
+          <option value="requests" <%= cur?.mode === 'requests' ? 'selected' : '' %>>requêtes enregistrées<%= cur ? ` (${cur.requests.length})` : '' %></option>
+          <option value="free" <%= cur?.mode === 'free' ? 'selected' : '' %>>toutes les requêtes</option>
+          <% } else { %>
           <option value="alert" <%= cur?.mode === 'alert' ? 'selected' : '' %>>en cas d'alerte</option>
           <option value="always" <%= cur?.mode === 'always' ? 'selected' : '' %>>à chaque passage</option>
+          <% } %>
         </select>
       </label>
       <% }) %>
