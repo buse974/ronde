@@ -581,3 +581,18 @@ h2.genre.oneshot::before { background: var(--oneshot); }
 .volet-claude .carte.modif { border-left: 3px solid var(--ronde); }
 .volet-claude .carte.modif .surtitre { color: var(--ronde); }
 .volet-claude .bulle.moi { border-color: color-mix(in srgb, var(--cours) 35%, var(--trait)); }
+
+/* --- Canaux ------------------------------------------------------------- */
+.type.canal-mail { color: var(--craie); background: color-mix(in srgb, var(--craie) 10%, transparent); }
+.type.canal-slack { color: #e8a5ff; background: color-mix(in srgb, #e8a5ff 14%, transparent); }
+.type.canal-teams { color: #9ba7ff; background: color-mix(in srgb, #9ba7ff 16%, transparent); }
+.type.canal-webhook { color: var(--alerte); background: color-mix(in srgb, var(--alerte) 12%, transparent); }
+.registre.canaux td { vertical-align: top; padding: 0.6rem 0.5rem; }
+.registre.canaux .erreur { color: var(--echec); }
+.ajout-canal { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--trait); }
+.ajout-canal h3 { margin: 0 0 0.6rem; }
+.ligne-champs { display: grid; grid-template-columns: 1fr 10rem; gap: 0.75rem; }
+.canaux-ronde { border: 0; padding: 0; margin: 0 0 0.8rem; }
+.canaux-ronde form { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
+.ligne-canal { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 0; font-weight: 500; }
+.ligne-canal select { width: auto; margin: 0; }

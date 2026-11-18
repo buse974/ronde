@@ -62,6 +62,14 @@ export function transcriptOf(messages) {
     .join('\n\n');
 }
 
+/** Les canaux, tels que Claude les voit : noms et types, jamais les accès. */
+export function channelsContext(available = [], current = null) {
+  const list = available.length ? available.map((c) => `« ${c.name} » (${c.typeLabel ?? c.type})`).join(', ') : 'aucun (l’administrateur les ajoute dans Réglages > Canaux)';
+  let text = `Canaux d'envoi configurés : ${list}. C'est ronde qui envoie la réponse d'une ronde sur ses canaux, « en cas d'alerte » (réponse autre que RAS, ou échec) ou « à chaque passage » ; sans canal, les alertes partent au mail par défaut des réglages. Tu ne peux pas créer de canal, seulement en brancher un existant.`;
+  if (current) text += `\nCanaux de cette ronde : ${current.length ? current.map((c) => `« ${c.name} » (${c.mode === 'always' ? 'à chaque passage' : 'en cas d’alerte'})`).join(', ') : 'aucun'}.`;
+  return text;
+}
+
 /**
  * Prompt d'une exécution ponctuelle : un court contexte (où Claude tourne,
  * quelles données du serveur il peut lire), puis la demande telle quelle.
@@ -103,7 +111,7 @@ export function visibleText(text) {
 }
 
 /** Prompt d'un tour de conception : consignes, données disponibles, conversation. */
-export function designPrompt({ messages, timezone, hostDataDir, allowedTools }) {
+export function designPrompt({ messages, timezone, hostDataDir, allowedTools, channels = [] }) {
   const transcript = transcriptOf(messages);
   return `Tu aides l'administrateur de « ronde » à concevoir une ronde. Une ronde est un prompt que Claude exécutera seul, sans personne pour lui répondre, avec \`claude -p\`, sur ce serveur, à heure fixe (cron) ou à la demande.
 
@@ -113,6 +121,7 @@ Règles d'une ronde :
 ${hostDataListing(hostDataDir)}
 - Outils qu'une ronde peut utiliser : ${allowedTools.join(', ')}. N'en propose pas d'autres.
 - Fréquence : expression cron à 5 champs, fuseau ${timezone}. Chaîne vide pour une ronde manuelle.
+- ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}] à la ronde proposée.
 
 Ta démarche :
 1. Si c'est utile, lis les fichiers de ${hostDataDir} pour connaître les valeurs actuelles et proposer des seuils réalistes.
@@ -137,7 +146,7 @@ ${transcript}`;
  * passage d'une ronde existante. Claude explique et, si on le lui demande,
  * propose une nouvelle version de la ronde.
  */
-export function tunePrompt({ task, run, runCommented = true, messages, timezone, hostDataDir, allowedTools }) {
+export function tunePrompt({ task, run, runCommented = true, messages, timezone, hostDataDir, allowedTools, channels = [], taskChannels = [] }) {
   const transcript = transcriptOf(messages);
   const etat = task.archived_at ? `archivée depuis le ${task.archived_at.slice(0, 10)} (elle ne tourne plus)` : task.active ? 'active' : 'en pause';
   const cut = (t, n) => (t && t.length > n ? `${t.slice(0, n)}\n[… tronqué]` : t);
@@ -153,6 +162,7 @@ La ronde « ${task.name} » :
 - État : ${etat}
 - Fréquence : ${task.cron ? `\`${task.cron}\` (fuseau ${timezone})` : 'manuelle'}
 - Outils : ${task.allowed_tools.join(', ') || 'aucun'} ; tours maximum : ${task.max_turns} ; délai : ${task.timeout_sec} s
+- ${channelsContext(channels, taskChannels)}
 - Prompt actuel :
 <prompt>
 ${task.prompt}
@@ -167,7 +177,7 @@ Ta démarche :
 - Si l'administrateur demande pourquoi la ronde a répondu ainsi, explique-le à partir du prompt et des données (relis-les si c'est utile), en citant les chiffres.
 - S'il veut que la ronde se comporte autrement la prochaine fois, propose la ronde modifiée : garde ce qui marche, change seulement ce qui est nécessaire, et dis en une ou deux phrases ce que tu as changé. Outils autorisés : ${allowedTools.join(', ')}.
 - S'il manque une information importante, pose au plus 2 questions courtes.
-- Tu peux agir sur la ronde, mais UNIQUEMENT sur accord explicite de l'administrateur (« ok », « vas-y », « applique », « mets-la en pause », « remets-la active »…), et seulement pour ce qui vient d'être discuté. Actions : « modifier » (applique une version de la ronde, tous les champs repris), « pause », « reprendre », « archiver », « restaurer » (sort des archives ; ajoute "active": true si on te demande aussi de la réactiver). Une ronde archivée ne peut qu'être restaurée.
+- Tu peux agir sur la ronde, mais UNIQUEMENT sur accord explicite de l'administrateur (« ok », « vas-y », « applique », « mets-la en pause », « remets-la active »…), et seulement pour ce qui vient d'être discuté. Actions : « modifier » (applique une version de la ronde, tous les champs repris), « canaux » (remplace la liste des canaux de la ronde, parmi les canaux configurés), « pause », « reprendre », « archiver », « restaurer » (sort des archives ; ajoute "active": true si on te demande aussi de la réactiver). Une ronde archivée ne peut qu'être restaurée.
 - Quand tu agis, dis-le en une phrase claire (« C'est fait : alerte au-dessus de 95 %, /boot ignoré. »), sans roman, sauf si on te demande le détail.
 - Les lignes [Historique] de la conversation sont écrites par ronde : c'est la trace fiable de ce qui a été fait (création, modifications avec le prompt avant / après, pauses, archivage). Appuie-toi dessus pour savoir où en est la ronde ou revenir à une version précédente.
 
@@ -178,6 +188,8 @@ soit
 soit
 {"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
 soit
+{"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}]} (liste complète ; [] pour n'en garder aucun)
+soit
 {"type": "action", "action": "pause"} (ou "reprendre", "archiver", {"type": "action", "action": "restaurer", "active": true})
 (dans une proposition ou une modification, reprends tous les champs, y compris ceux qui ne changent pas).
 
@@ -186,7 +198,7 @@ Conversation jusqu'ici :
 ${transcript}`;
 }
 
-export function createAsks({ db, store, config, claudeAuth, log = console }) {
+export function createAsks({ db, store, channels = null, config, claudeAuth, log = console }) {
   const q = (sql) => db.prepare(sql);
   // Plusieurs conversations en parallèle (plafond : mémoire du serveur, quota Claude),
   // mais une seule réponse à la fois dans une même conversation.
@@ -313,6 +325,16 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
       : { data: candidate, error: parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ') };
   }
 
+  /** [{ nom, quand }] → [{ name, mode }], en vérifiant que chaque canal existe. */
+  function wantedChannels(list) {
+    if (!channels) throw new Error('canaux indisponibles.');
+    return list.map((c) => {
+      const name = c.nom ?? c.name;
+      if (!channels.findByName(name)) throw new Error(`canal « ${name} » introuvable (Réglages > Canaux).`);
+      return { name, mode: ['toujours', 'always'].includes(c.quand ?? c.mode) ? 'always' : 'alert' };
+    });
+  }
+
   /** Exécute l'action demandée par Claude, avec les mêmes fonctions que les boutons. Lève une erreur lisible. */
   function executeAction(ask, block) {
     const row = ask.task_id ? q('SELECT * FROM tasks WHERE id = ?').get(ask.task_id) : null;
@@ -321,7 +343,9 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
       if (row) throw new Error('cette conversation a déjà sa ronde.');
       const { data, error } = candidateOf(block.ronde ?? {});
       if (error) throw new Error(error);
-      store.createTask(data, { by: 'claude', askId: ask.id });
+      if (Array.isArray(block.ronde?.canaux)) wantedChannels(block.ronde.canaux); // vérifie avant de créer
+      const taskId = store.createTask(data, { by: 'claude', askId: ask.id });
+      if (Array.isArray(block.ronde?.canaux) && block.ronde.canaux.length) channels.setForTask(taskId, wantedChannels(block.ronde.canaux), { by: 'claude' });
       return;
     }
     if (!row) throw new Error('aucune ronde rattachée à cette conversation.');
@@ -330,6 +354,9 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
       const { data, error } = candidateOf(block.ronde ?? {}, row);
       if (error) throw new Error(error);
       store.updateTask(row.id, data, { by: 'claude' });
+    } else if (action === 'canaux') {
+      if (!Array.isArray(block.canaux)) throw new Error('liste de canaux manquante.');
+      channels.setForTask(row.id, wantedChannels(block.canaux), { by: 'claude' });
     } else if (action === 'pause') store.setTaskActive(row.id, false, { by: 'claude' });
     else if (action === 'reprendre') store.setTaskActive(row.id, true, { by: 'claude' });
     else if (action === 'archiver') store.archiveTask(row.id, { by: 'claude' });
@@ -340,7 +367,7 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
   async function runDesignTurn(id) {
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
     const allowed = ask.allowed_tools;
-    const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed };
+    const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed, channels: channels ? channels.list() : [] };
     let prompt;
     // Conversation rattachée à une ronde (réglage, ou conception terminée) : on parle de la ronde existante.
     if (ask.task_id) {
@@ -353,7 +380,7 @@ export function createAsks({ db, store, config, claudeAuth, log = console }) {
       const run = ask.run_id
         ? q('SELECT * FROM runs WHERE id = ?').get(ask.run_id)
         : q(`SELECT * FROM runs WHERE task_id = ? AND status != 'running' ORDER BY started_at DESC, id DESC LIMIT 1`).get(ask.task_id);
-      prompt = tunePrompt({ ...ctx, task, run, runCommented: !!ask.run_id });
+      prompt = tunePrompt({ ...ctx, task, run, runCommented: !!ask.run_id, taskChannels: channels ? channels.forTask(task.id) : [] });
     } else {
       prompt = designPrompt(ctx);
     }

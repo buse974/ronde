@@ -11,10 +11,28 @@
     <dt>Type</dt><dd><span class="type <%= t.cron || t.run_at ? 'ronde' : 'oneshot' %>"><%= t.cron || t.run_at ? 'Ronde' : 'Oneshot' %></span></dd>
     <dt>État</dt><dd><span class="etat-ronde <%= t.archived_at ? 'archivee' : t.active ? 'active' : 'pause' %>"><%= t.archived_at ? 'Archivée' : t.active ? 'Active' : 'En pause' %></span></dd>
     <dt>Déclenchement</dt><dd><% if (t.cron) { %><%= h.cronText(t.cron) %> <code><%= t.cron %></code><% if (t.active && !t.archived_at) { %><br><span class="discret">Prochain passage : <%= h.nextRun(t.cron) %></span><% } %><% } else if (t.run_at) { %><%= h.triggerText(t) %><% } else { %>À la demande (oneshot)<% } %></dd>
-    <dt>Alerte mail</dt><dd><% if (!t.notify) { %>Non : simple réponse, pas de mail<% } else if (it.alertEmail) { %>Si la réponse n'est pas « RAS » ou en cas d'échec, à <strong><%= it.alertEmail %></strong><% } else { %>Activée, mais aucun destinataire : <a href="/settings#r-alertes">à régler</a><% } %></dd>
+    <dt>Envoi</dt><dd><% if ((it.taskChannels || []).length) { %><% it.taskChannels.forEach((c, i) => { %><%= i ? ', ' : '' %><span class="type canal-<%= c.type %>"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% }) %><% } else if (!t.notify) { %>Aucun : simple réponse, rien n'est envoyé<% } else if (it.alertEmail) { %>Mail d'alerte par défaut, à <strong><%= it.alertEmail %></strong>, en cas d'alerte ou d'échec<% } else { %>Rien : aucun canal ni mail d'alerte, <a href="/settings#canaux">à régler</a><% } %></dd>
     <dt>Outils</dt><dd><%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %></dd>
     <dt>Limites</dt><dd><%= t.max_turns %> tours maximum, <%= t.timeout_sec %> s maximum</dd>
     <dt>Créée</dt><dd><%= h.short(t.created_at) %><%= t.created_via === 'mcp' ? ', via MCP' : '' %> · modifiée <%= h.short(t.updated_at) %></dd>
   </dl>
+  <% if ((it.allChannels || []).length && !t.archived_at) { %>
+  <details class="canaux-ronde"><summary>Choisir les canaux</summary>
+    <form method="post" action="/tasks/<%= t.id %>/channels">
+      <% it.allChannels.forEach((c) => { const cur = (it.taskChannels || []).find((x) => x.id === c.id); %>
+      <label class="ligne-canal"><span><span class="type canal-<%= c.type %>"><%= c.typeLabel %></span> <%= c.name %></span>
+        <select name="mode_<%= c.id %>">
+          <option value="" <%= !cur ? 'selected' : '' %>>non</option>
+          <option value="alert" <%= cur?.mode === 'alert' ? 'selected' : '' %>>en cas d'alerte</option>
+          <option value="always" <%= cur?.mode === 'always' ? 'selected' : '' %>>à chaque passage</option>
+        </select>
+      </label>
+      <% }) %>
+      <div class="actions"><button type="submit" class="compact">Enregistrer</button></div>
+    </form>
+  </details>
+  <% } else if (!(it.allChannels || []).length) { %>
+  <p class="petit discret">Pour envoyer sur Slack, Teams ou un autre mail : <a href="/settings#canaux">ajoute un canal</a>.</p>
+  <% } %>
   <details open class="prompt-ronde"><summary>Prompt</summary><pre><%= t.prompt %></pre></details>
 </dialog>

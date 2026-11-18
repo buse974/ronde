@@ -75,9 +75,13 @@ Colle le token (`sk-ant-oat…`) dans **Réglages**. Il utilise ton abonnement P
 
 Le « coût estimé » affiché est l'équivalent API renvoyé par Claude : indicatif avec un abonnement.
 
-### Mails d'alerte
+### Canaux et mails d'alerte
 
-Renseigne un relais SMTP dans `.env`, ou `/etc/ronde/ronde.env` sans Docker (voir `.env.example`), puis l'email destinataire dans **Réglages** (bouton « Envoyer un mail de test »).
+Un **canal**, c'est là où ronde envoie la réponse d'une ronde : **mail**, **Slack** (webhook entrant), **Teams** (webhook Workflows) ou **webhook** générique (JSON, jeton Bearer facultatif : ntfy, n8n, Jeedom…). Ils se créent et se testent dans **Réglages > Canaux**, ou depuis Claude Code par MCP (« crée un canal Slack avec ce webhook et teste-le »). Les accès sont chiffrés en base et ne sont jamais réaffichés.
+
+Chaque ronde choisit ses canaux, **en cas d'alerte** (réponse autre que RAS, ou échec) ou **à chaque passage** : bouton **Configuration** de la ronde, ou demande à Claude (« envoie le résumé sur Slack chaque matin »). C'est toujours ronde qui envoie, jamais Claude.
+
+Sans canal, une ronde envoie ses alertes au **mail par défaut** des Réglages. Pour les mails, renseigne un relais SMTP dans `.env`, ou `/etc/ronde/ronde.env` sans Docker (voir `.env.example`).
 
 ## Piloter ronde depuis Claude (MCP)
 
@@ -89,7 +93,7 @@ claude mcp add --scope user --transport http ronde https://ton-serveur/mcp
 
 Dans Claude Code : `/mcp` → ronde → s'authentifier. Le navigateur s'ouvre sur ronde : identifiant + mot de passe, puis « Autoriser ». Aucun token à copier ; l'accès se révoque dans **Réglages > Accès MCP**.
 
-Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_host_data`, `test_prompt`, `create_ronde`, `update_ronde`, `set_active`, `run_ronde`, `get_run`, `list_runs`. Pas de suppression via MCP.
+Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_host_data`, `test_prompt`, `create_ronde`, `update_ronde`, `set_active`, `run_ronde`, `get_run`, `list_runs`, `list_canaux`, `create_canal`, `test_canal`, `set_canaux_ronde`. Pas de suppression via MCP.
 
 - OAuth 2.1 (PKCE, enregistrement dynamique limité aux redirections locales et claude.ai) : exige une `PUBLIC_URL` en **HTTPS** (ou localhost).
 - Une ronde créée ou essayée via MCP ne peut utiliser que les outils autorisés dans **Réglages > Accès MCP** (par défaut `Read`, `Grep`, `Glob`).

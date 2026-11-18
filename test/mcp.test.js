@@ -231,3 +231,33 @@ describe('durcissements', () => {
     expect((await rpc(app, t.access_token, 'tools/list')).status).toBe(401);
   });
 });
+
+describe('canaux via MCP', () => {
+  it('crée, teste, liste et branche un canal, sans jamais renvoyer l’accès en clair', async () => {
+    const { app, store, posts } = await installedApp();
+    const { access_token: tok } = await connect(app);
+    const url = 'https://hooks.slack.com/services/T1/B1/tres-secret';
+
+    const created = await call(app, tok, 'create_canal', { nom: 'Slack perso', type: 'slack', destination: url });
+    expect(created.data).toMatchObject({ name: 'Slack perso', type: 'slack', test: 'message de test envoyé' });
+    expect(created.text).not.toContain('tres-secret');
+    expect(posts.at(-1).url).toBe(url);
+
+    const bad = await call(app, tok, 'create_canal', { nom: 'X', type: 'slack', destination: 'https://evil.com' });
+    expect(bad.isError).toBe(true);
+
+    const list = await call(app, tok, 'list_canaux');
+    expect(list.text).not.toContain('tres-secret');
+    expect(list.data.map((c) => c.name)).toEqual(['Slack perso']);
+
+    const sent = await call(app, tok, 'test_canal', { nom: 'Slack perso', message: 'Bonjour depuis Claude Code' });
+    expect(sent.data).toMatchObject({ envoye: true });
+    expect(posts.at(-1).body.text).toContain('Bonjour depuis Claude Code');
+
+    const id = store.createTask({ name: 'Disque', prompt: 'p', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 2, timeout_sec: 60, active: true });
+    const set = await call(app, tok, 'set_canaux_ronde', { id, canaux: [{ nom: 'Slack perso', quand: 'toujours' }] });
+    expect(set.data.canaux).toEqual([{ nom: 'Slack perso', quand: 'toujours' }]);
+    const unknown = await call(app, tok, 'set_canaux_ronde', { id, canaux: [{ nom: 'Inconnu' }] });
+    expect(unknown.isError).toBe(true);
+  });
+});

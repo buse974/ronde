@@ -86,10 +86,59 @@
   </div>
 </section>
 
+<section class="reglage" aria-labelledby="r-canaux" id="canaux">
+  <div>
+    <h2 id="r-canaux">Canaux</h2>
+    <p>Là où ronde envoie la réponse d'une ronde : mail, Slack, Teams ou un webhook (ntfy, n8n, Jeedom…). C'est ronde qui envoie, jamais Claude ; les accès sont chiffrés et ne sont plus réaffichés.</p>
+    <p class="discret">Chaque ronde choisit ses canaux, en cas d'alerte ou à chaque passage (bouton Configuration de la ronde, ou demande-le à Claude).</p>
+  </div>
+  <div>
+    <% if (it.channels.length) { %>
+    <table class="registre canaux">
+      <thead><tr><th>Canal</th><th>Destination</th><th>Dernier test</th><th class="fin"></th></tr></thead>
+      <tbody>
+      <% it.channels.forEach((c) => { %>
+        <tr>
+          <td><strong><%= c.name %></strong><br><span class="type canal-<%= c.type %>"><%= c.typeLabel %></span></td>
+          <td class="petit"><code><%= c.preview %></code></td>
+          <td class="petit"><% if (c.tested_at) { %><span class="etat <%= c.test_ok ? 'ok' : 'failed' %>"><%= c.test_ok ? 'OK' : 'Échec' %></span> <span class="discret"><%= it.h.ago(c.tested_at) %></span><% if (!c.test_ok && c.test_error) { %><br><span class="erreur"><%= c.test_error %></span><% } %><% } else { %><span class="discret">jamais testé</span><% } %></td>
+          <td class="fin">
+            <form method="post" action="/settings/channels/<%= c.id %>/test" class="en-ligne"><button type="submit" class="secondaire compact">Tester</button></form>
+            <form method="post" action="/settings/channels/<%= c.id %>/delete" class="en-ligne"><button type="submit" class="danger compact">Supprimer</button></form>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+    <% } else { %>
+    <p class="discret">Aucun canal. Sans canal, une ronde envoie ses alertes au mail ci-dessous.</p>
+    <% } %>
+    <form method="post" action="/settings/channels" class="ajout-canal">
+      <h3>Ajouter un canal</h3>
+      <div class="ligne-champs">
+        <label>Nom <input name="name" required maxlength="60" placeholder="Slack équipe" value="<%= it.channelForm?.name ?? '' %>"></label>
+        <label>Type
+          <select name="type">
+            <% Object.entries(it.channelTypes).forEach(([k, v]) => { %><option value="<%= k %>" <%= (it.channelForm?.type ?? 'mail') === k ? 'selected' : '' %>><%= v.label %></option><% }) %>
+          </select>
+        </label>
+      </div>
+      <label>Adresses ou URL
+        <input name="target" required autocomplete="off" placeholder="toi@exemple.fr, ou https://hooks.slack.com/…" <%~ e.channel ? 'aria-invalid="true"' : '' %>>
+        <small class="<%= e.channel ? 'erreur' : '' %>"><%= e.channel ?? 'Mail : adresses séparées par des virgules. Slack, Teams, webhook : l’URL du webhook. Un nom existant remplace le canal.' %></small>
+      </label>
+      <label>Jeton (webhook, facultatif)
+        <input name="token" type="password" autocomplete="off" placeholder="envoyé en Authorization: Bearer">
+      </label>
+      <div class="actions"><button type="submit">Ajouter et tester</button></div>
+    </form>
+  </div>
+</section>
+
 <section class="reglage" aria-labelledby="r-alertes">
   <div>
-    <h2 id="r-alertes">Alertes</h2>
-    <p>Un mail part quand Claude ne répond pas « RAS » ou quand un passage échoue.</p>
+    <h2 id="r-alertes">Mail d'alerte par défaut</h2>
+    <p>Pour les rondes sans canal : un mail part quand Claude ne répond pas « RAS » ou quand un passage échoue.</p>
   </div>
   <div>
     <% if (!it.smtpEnabled) { %>

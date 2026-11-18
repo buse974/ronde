@@ -43,6 +43,12 @@ export function createMailer(config, { transport } = {}) {
       return true;
     },
 
+    /** Envoi générique (canaux mail). */
+    async send({ to, subject, text }) {
+      if (!transporter) throw new Error('SMTP non configuré (SMTP_HOST).');
+      await transporter.sendMail({ from: config.smtp.from, to, subject, text });
+    },
+
     async sendTest(to) {
       if (!transporter) throw new Error('SMTP non configuré (SMTP_HOST).');
       await transporter.sendMail({

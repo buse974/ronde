@@ -52,7 +52,7 @@ const rondeFields = {
  * Serveur MCP de ronde (Streamable HTTP, sans session). Un McpServer est créé
  * par requête ; l'authentification OAuth est faite en amont (requireBearerAuth).
  */
-export function createMcpHandler({ store, config, claudeAuth, executor, oauth, hostDataDir }) {
+export function createMcpHandler({ store, config, claudeAuth, executor, oauth, channels, hostDataDir }) {
   const h = (p) => (config.publicUrl ? `${config.publicUrl}${p}` : p);
   let testRunning = false;
 
@@ -288,6 +288,76 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, h
         if (error) return fail(error);
         store.updateTask(id, data, { by: 'mcp' });
         return ok({ modifie: true, ...summary(store.listTasks().find((x) => x.id === id)) });
+      },
+    );
+
+    // --- Canaux : configurer en une phrase depuis Claude Code. Les accès ne ressortent jamais en clair.
+    server.registerTool(
+      'list_canaux',
+      {
+        title: 'Canaux',
+        description: 'Liste les canaux d’envoi (mail, Slack, Teams, webhook) : nom, type, destination masquée, dernier test.',
+        annotations: { readOnlyHint: true },
+      },
+      async () => ok(channels.list()),
+    );
+
+    server.registerTool(
+      'create_canal',
+      {
+        title: 'Créer un canal',
+        description:
+          'Crée un canal d’envoi, ou le remplace si le nom existe, puis envoie un message de test. type : mail (destination = adresses séparées par des virgules), slack (URL https://hooks.slack.com/…), teams (URL du webhook Workflows), webhook (URL qui reçoit le résultat en JSON, jeton Bearer facultatif). Les accès sont chiffrés et ne sont plus jamais renvoyés.',
+        inputSchema: {
+          nom: z.string().min(1).max(60),
+          type: z.enum(['mail', 'slack', 'teams', 'webhook']),
+          destination: z.string().min(1),
+          jeton: z.string().optional(),
+        },
+      },
+      async ({ nom, type, destination, jeton }) => {
+        let c;
+        try {
+          c = channels.save({ name: nom, type, target: destination, token: jeton });
+        } catch (err) {
+          return fail(`Canal non enregistré : ${err.message}`);
+        }
+        const t = await channels.test(c.id);
+        return ok({ ...channels.get(c.id), test: t.ok ? 'message de test envoyé' : `échec du test : ${t.error}` });
+      },
+    );
+
+    server.registerTool(
+      'test_canal',
+      {
+        title: 'Tester un canal',
+        description: 'Envoie un message sur un canal (message de test par défaut) et renvoie le résultat.',
+        inputSchema: { nom: z.string().min(1), message: z.string().max(4000).optional() },
+      },
+      async ({ nom, message }) => {
+        const c = channels.findByName(nom);
+        if (!c) return fail(`Canal « ${nom} » introuvable.`);
+        const t = await channels.test(c.id, message);
+        return t.ok ? ok({ canal: c.name, envoye: true }) : fail(`Échec de l’envoi sur « ${c.name} » : ${t.error}`);
+      },
+    );
+
+    server.registerTool(
+      'set_canaux_ronde',
+      {
+        title: 'Canaux d’une ronde',
+        description: 'Remplace la liste des canaux d’une ronde. quand : « alerte » (réponse autre que RAS ou échec) ou « toujours » (à chaque passage). Liste vide : aucun canal (mail d’alerte par défaut).',
+        inputSchema: { id: z.number().int(), canaux: z.array(z.object({ nom: z.string(), quand: z.enum(['alerte', 'toujours']).default('alerte') })) },
+      },
+      async ({ id, canaux }) => {
+        const t = store.getTask(id);
+        if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée)' : ''}.`);
+        try {
+          channels.setForTask(id, canaux.map((c) => ({ name: c.nom, mode: c.quand === 'toujours' ? 'always' : 'alert' })), { by: 'mcp' });
+        } catch (err) {
+          return fail(err.message);
+        }
+        return ok({ id, canaux: channels.forTask(id).map((c) => ({ nom: c.name, quand: c.mode === 'always' ? 'toujours' : 'alerte' })) });
       },
     );
 

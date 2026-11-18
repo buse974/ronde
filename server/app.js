@@ -20,6 +20,7 @@ import {
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { ASK_TOOLS, createAsks } from './asks.js';
+import { CHANNEL_TYPES, MODES } from './channels.js';
 import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
@@ -58,13 +59,13 @@ function constantTimeEqual(a, b) {
  * @param {ReturnType<import('./scheduler.js').createExecutor>} deps.executor
  * @param {string|null} deps.setupCode  code d'installation (affiché dans les logs)
  */
-export function createApp({ store, config, claudeAuth, mailer, executor, setupCode }) {
+export function createApp({ store, config, claudeAuth, mailer, executor, channels, setupCode }) {
   const app = express();
   const eta = new Eta({ views: path.join(ROOT, 'views'), cache: config.production });
   const h = createHelpers(config.timezone);
   const limiter = createRateLimiter();
   const oauth = createOAuthProvider({ db: store.db });
-  const asks = createAsks({ db: store.db, store, config, claudeAuth });
+  const asks = createAsks({ db: store.db, store, channels, config, claudeAuth });
   asks.recoverOrphans();
   app.locals.asks = asks;
   const mcp = mcpEndpoint(config);
@@ -104,7 +105,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       requiredScopes: [MCP_SCOPE],
       resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(mcp.url),
     });
-    const handler = createMcpHandler({ store, config, claudeAuth, executor, oauth, hostDataDir: config.hostDataDir });
+    const handler = createMcpHandler({ store, config, claudeAuth, executor, oauth, channels, hostDataDir: config.hostDataDir });
     app.post('/mcp', bearer, express.json({ limit: '1mb' }), asyncRoute(handler));
     app.all('/mcp', (req, res) =>
       res.status(405).set('Allow', 'POST').json({ jsonrpc: '2.0', error: { code: -32000, message: 'Méthode non autorisée.' }, id: null }),
@@ -404,6 +405,9 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       conv,
       live: conv ? asks.live(conv.id) : null,
       alertEmail: store.getSetting('alert_email'),
+      allChannels: channels.list(),
+      taskChannels: channels.forTask(req.task.id),
+      modes: MODES,
       askBusy: asks.busy,
       convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
     });
@@ -459,6 +463,15 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
     res.redirect(`/tasks/${req.task.id}`);
   });
 
+  app.post('/tasks/:id/channels', loadTask, (req, res) => {
+    const wanted = channels
+      .list()
+      .map((c) => ({ id: c.id, mode: req.body[`mode_${c.id}`] }))
+      .filter((w) => w.mode === 'alert' || w.mode === 'always');
+    channels.setForTask(req.task.id, wanted, { by: 'ui' });
+    res.redirect(`/tasks/${req.task.id}`);
+  });
+
   app.post('/tasks/:id/restore', loadTask, (req, res) => {
     store.restoreTask(req.task.id, { by: 'ui', active: req.body.active === '1' });
     res.redirect(`/tasks/${req.task.id}`);
@@ -481,6 +494,9 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       conv,
       live: conv ? asks.live(conv.id) : null,
       alertEmail: store.getSetting('alert_email'),
+      allChannels: channels.list(),
+      taskChannels: channels.forTask(run.task_id),
+      modes: MODES,
       askBusy: asks.busy,
       convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
     });
@@ -510,6 +526,8 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
       mcp: { ...mcp, url: mcp.url.toString() },
       grants: oauth.listGrants(),
       mcpTools: mcpAllowedTools(store),
+      channels: channels.list(),
+      channelTypes: CHANNEL_TYPES,
       defaultMcpTools: DEFAULT_MCP_TOOLS,
       errors: {},
       notice: null,
@@ -571,6 +589,36 @@ export function createApp({ store, config, claudeAuth, mailer, executor, setupCo
   app.post('/settings/mcp/grants/:id/revoke', (req, res) => {
     oauth.revokeGrant(req.params.id);
     settingsView(res, { notice: 'Accès MCP révoqué.' });
+  });
+
+  // --- Canaux -----------------------------------------------------------
+  app.post(
+    '/settings/channels',
+    asyncRoute(async (req, res) => {
+      const form = { name: req.body.name, type: req.body.type };
+      let c;
+      try {
+        c = channels.save({ name: req.body.name, type: req.body.type, target: req.body.target, token: req.body.token });
+      } catch (err) {
+        res.status(400);
+        return settingsView(res, { errors: { channel: `Canal non enregistré : ${err.message}` }, channelForm: form });
+      }
+      const t = await channels.test(c.id);
+      settingsView(res, { notice: t.ok ? `Canal « ${c.name} » enregistré, et le message de test est parti.` : `Canal « ${c.name} » enregistré, mais le test a échoué : ${t.error}` });
+    }),
+  );
+
+  app.post(
+    '/settings/channels/:id/test',
+    asyncRoute(async (req, res) => {
+      const t = await channels.test(Number(req.params.id));
+      settingsView(res, { notice: t.ok ? 'Message de test envoyé.' : `Le test a échoué : ${t.error}` });
+    }),
+  );
+
+  app.post('/settings/channels/:id/delete', (req, res) => {
+    channels.remove(Number(req.params.id));
+    settingsView(res, { notice: 'Canal supprimé.' });
   });
 
   app.post('/settings/debug', (req, res) => {

@@ -213,7 +213,7 @@ systemctl restart ronde       # sans Docker
 
 ## 6. Mails d'alerte
 
-Un mail part quand un run est en **alerte** (réponse autre que `RAS`) ou en **échec**.
+Par défaut, un mail part quand un run est en **alerte** (réponse autre que `RAS`) ou en **échec**. Pour envoyer ailleurs (Slack, Teams, webhook, d'autres adresses), ou à chaque passage, crée des **canaux** dans **Réglages > Canaux** et branche-les sur les rondes (voir le [README](README.md#canaux-et-mails-dalerte)). Les canaux mail utilisent ce même relais SMTP.
 
 1. Renseigne le relais dans `.env`. Exemple avec un relais authentifié en STARTTLS :
 

@@ -82,7 +82,8 @@ describe('executor (faux binaire claude)', () => {
     const run = await runTask(ctx, { prompt: 'MODE:alert' });
     expect(run.status).toBe('alert');
     expect(run.alert_sent).toBe(1);
-    expect(ctx.mailer.sent[0]).toMatchObject({ to: 'a@b.c', status: 'alert', result: 'Disque / à 92 %' });
+    expect(ctx.mailer.sent[0]).toMatchObject({ to: 'a@b.c', subject: expect.stringContaining('Alerte') });
+    expect(ctx.mailer.sent[0].text).toContain('Disque / à 92 %');
   });
 
   it.each([

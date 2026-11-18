@@ -35,7 +35,7 @@ export function isDue(expr, timezone, minuteStart) {
  * Exécute une tâche : crée le run (sauf si un run est déjà en cours), lance
  * claude, enregistre le résultat et envoie l'alerte si besoin.
  */
-export function createExecutor({ store, config, claudeAuth, mailer, log = console }) {
+export function createExecutor({ store, config, claudeAuth, channels, log = console }) {
   const inFlight = new Set();
   /** Passages en cours : runId → AbortController (bouton « Arrêter »). */
   const controllers = new Map();
@@ -65,15 +65,12 @@ export function createExecutor({ store, config, claudeAuth, mailer, log = consol
     }
     store.finishRun(runId, outcome);
 
-    // Pas de mail après un arrêt manuel : c'est toi qui l'as demandé.
-    if (task.notify !== false && !outcome.stopped && (outcome.status === 'alert' || outcome.status === 'failed')) {
-      const to = store.getSetting('alert_email');
-      try {
-        const sent = await mailer.sendRunAlert({ to, task, run: { id: runId, ...outcome } });
-        if (sent) store.markAlertSent(runId);
-      } catch (err) {
-        log.error(`[ronde] envoi de l'alerte du run #${runId} impossible : ${err.message}`);
-      }
+    // Canaux de la ronde (ou mail d'alerte des réglages). Rien après un arrêt manuel.
+    try {
+      const sent = await channels.notifyRun(task, { id: runId, ...outcome });
+      if (sent) store.markAlertSent(runId);
+    } catch (err) {
+      log.error(`[ronde] envoi du passage #${runId} impossible : ${err.message}`);
     }
     return outcome;
   }
