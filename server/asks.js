@@ -199,7 +199,7 @@ Réponds en français, de façon concise. Termine TOUJOURS ta réponse par un bl
 soit
 {"type": "proposal", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
 soit
-{"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300}}
+{"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300, "canaux": [...]}} ("canaux" facultatif : la liste complète, pour changer prompt et canaux d'un seul coup)
 soit
 {"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [{"methode": "POST", "chemin": "/...", "corps": {...}}]}]} (liste complète, canaux déjà branchés compris ; [] pour n'en garder aucun)
 soit
@@ -381,7 +381,10 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     if (action === 'modifier') {
       const { data, error } = candidateOf(block.ronde ?? {}, row);
       if (error) throw new Error(error);
+      // Prompt et canaux d'un seul « ok » (ex. requête API enregistrée + prompt qui l'appelle).
+      const wanted = Array.isArray(block.ronde?.canaux) ? wantedChannels(block.ronde.canaux) : null;
       store.updateTask(row.id, data, { by: 'claude' });
+      if (wanted) channels.setForTask(row.id, wanted, { by: 'claude' });
     } else if (action === 'canaux') {
       if (!Array.isArray(block.canaux)) throw new Error('liste de canaux manquante.');
       channels.setForTask(row.id, wantedChannels(block.canaux), { by: 'claude' });
