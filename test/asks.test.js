@@ -289,4 +289,20 @@ describe('Demander à Claude', () => {
     await form(agent, '/settings/debug', { debug: '1' });
     expect((await agent.get(`/tasks/${taskId}`).set('Host', HOST)).text).toContain('Historique ·');
   });
+
+  it('une demande explicite de création enchaîne sur la conception, dans la même conversation', async () => {
+    const { agent, asks, channels } = await admin();
+    channels.save({ name: 'jeedommaison', type: 'api', target: 'https://home.exemple.fr', token: 'k', place: 'body' });
+    const res = await form(agent, '/asks', { prompt: 'crée-moi un oneshot qui éteint la lumière du salon MODE:creer' });
+    const id = Number(res.headers.location.split('/').pop());
+    await asks.drain();
+    const a = asks.get(id);
+    expect(a.kind).toBe('design');
+    expect(a.messages.map((m) => m.role)).toEqual(['user', 'claude', 'claude']);
+    expect(a.messages[1].text).toBe('Je prépare la ronde.');
+    expect(a.proposal).toMatchObject({ name: 'Lumière salon', cron: '' });
+    expect((await agent.get(`/asks/${id}`).set('Host', HOST)).text).toContain('Créer la ronde');
+    const { execPrompt } = await import('../server/asks.js');
+    expect(execPrompt({ text: 'x', hostDataDir: '/nope', tools: [], channels: channels.list() })).toContain('Canaux API configurés : « jeedommaison »');
+  });
 });

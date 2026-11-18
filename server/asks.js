@@ -92,15 +92,17 @@ export function whereContext({ hostDataDir, inContainer = true }) {
     : `tu tournes directement sur le serveur Linux de « ronde », sous un compte de service sans privilège, sans personne pour te répondre. Des données relevées toutes les 15 minutes (disque, fail2ban…) sont dans ${hostDataDir}, lisibles avec l'outil Read`;
 }
 
-export function execPrompt({ text, hostDataDir, inContainer = true, tools, history = [] }) {
+export function execPrompt({ text, hostDataDir, inContainer = true, tools, history = [], channels = [] }) {
   const previous = history.length ? `Échanges précédents de cette conversation :\n\n${transcriptOf(history)}\n\n` : '';
   return `Contexte : ${whereContext({ hostDataDir, inContainer })} :
 ${hostDataListing(hostDataDir)}
 Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
 Réponds en français, de façon concise, en citant les chiffres et l'heure de la mesure. Si l'information demandée n'est pas dans ces données, dis-le simplement et indique quelle donnée il faudrait relever.
 
-Ensuite, évalue si cette demande gagnerait à devenir une « ronde » : une vérification que Claude referait régulièrement et qui n'alerterait qu'en cas de problème (espace disque, sécurité, sauvegardes, certificats, dérive d'une valeur…). Une question ponctuelle, une explication ou une demande d'information générale n'est pas une ronde.
-Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant {"ronde": true} ou {"ronde": false}. N'en parle pas dans ta réponse : l'interface pose elle-même la question.
+${channels.length ? `${channelsContext(channels)}\n\n` : ''}Si l'administrateur demande explicitement de créer une ronde ou un oneshot (« crée-moi une ronde qui… », « fais-en un oneshot… »), ne fais pas le travail ici : réponds en une phrase que tu prépares la ronde, et mets "creer": true dans le bloc final. L'interface enchaîne aussitôt sur sa conception, dans cette même conversation.
+
+Sinon, évalue si cette demande gagnerait à devenir une « ronde » : une vérification que Claude referait régulièrement et qui n'alerterait qu'en cas de problème (espace disque, sécurité, sauvegardes, certificats, dérive d'une valeur…). Une question ponctuelle, une explication ou une demande d'information générale n'est pas une ronde.
+Termine TOUJOURS ta réponse par un bloc \`\`\`json contenant {"ronde": true} ou {"ronde": false} (et "creer": true pour une demande de création). N'en parle pas dans ta réponse : l'interface pose elle-même la question.
 
 ${previous}Demande :
 ${text}`;
@@ -309,8 +311,12 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
     const tools = ask.allowed_tools;
     const question = ask.messages.at(-1).text;
-    const full = raw ? question : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, inContainer: config.inContainer, tools });
-    const { r, out } = await call(id, full, tools, 10, EXEC_TIMEOUT_SEC);
+    const chans = channels ? channels.list() : [];
+    const full = raw
+      ? question
+      : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, inContainer: config.inContainer, tools, channels: chans });
+    // Question de l'accueil : avec l'administrateur, en direct ; il peut essayer les canaux API (et lire leur doc).
+    const { r, out } = await call(id, full, raw ? tools : [...tools, 'WebFetch'], 10, EXEC_TIMEOUT_SEC, { apiChannels: !raw });
     addUsage(id, r);
     if (r.status === 'failed') {
       const detail = r.result ?? (out?.stderr ? out.stderr.slice(-2000) : null);
@@ -326,6 +332,11 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
         messages: JSON.stringify([...freshMessages(id), { role: 'claude', text }]),
         error: null,
       });
+      // Demande explicite de création : on enchaîne sur la conception, dans la même conversation.
+      if (block?.creer === true) {
+        update(id, { kind: 'design', status: 'running', suggest_ronde: 0 });
+        await runDesignTurn(id);
+      }
     }
   }
 

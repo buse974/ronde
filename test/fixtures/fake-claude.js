@@ -38,6 +38,7 @@ process.stdin.on('end', () => {
     case 'actmodifier': return out({ result: 'C’est fait : alerte au-dessus de 95 %.\n\n```json\n' + JSON.stringify({ type: 'action', action: 'modifier', ronde: { name: 'Disque', prompt: 'Lis /host-metrics/disk.txt. Réponds RAS sous 95 %.', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
     case 'actcanaux': return out({ result: 'C’est fait : envoi sur Slack à chaque passage.\n\n```json\n{"type": "action", "action": "canaux", "canaux": [{"nom": "Slack", "quand": "toujours"}]}\n```' });
     case 'actcanauxinconnu': return out({ result: 'C’est fait.\n\n```json\n{"type": "action", "action": "canaux", "canaux": [{"nom": "Slack", "quand": "toujours"}, {"nom": "Discord"}]}\n```' });
+    case 'creer': return out({ result: (input.includes('Tu aides l') ? 'Voici ma proposition.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Lumière salon', prompt: 'Appelle le canal.', cron: '', allowed_tools: ['Read'], max_turns: 4 } }) + '\n```' : 'Je prépare la ronde.\n\n```json\n{"ronde": true, "creer": true}\n```') });
     case 'actpause': return out({ result: 'C’est fait : en pause.\n\n```json\n{"type": "action", "action": "pause"}\n```' });
     case 'actarchiver': return out({ result: 'C’est fait : archivée.\n\n```json\n{"type": "action", "action": "archiver"}\n```' });
     case 'actrestaurer': return out({ result: 'C’est fait : elle repart.\n\n```json\n{"type": "action", "action": "restaurer", "active": true}\n```' });
