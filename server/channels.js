@@ -1,4 +1,5 @@
 import { nowIso } from './db.js';
+import { smtpTransport as defaultSmtpTransport } from './mailer.js';
 import { decrypt, deriveKey, encrypt } from './secrets.js';
 
 /**
@@ -8,6 +9,7 @@ import { decrypt, deriveKey, encrypt } from './secrets.js';
  */
 export const CHANNEL_TYPES = {
   mail: { label: 'Mail', field: 'Adresses (séparées par des virgules)' },
+  smtp: { label: 'SMTP', field: 'Hôte SMTP (hôte ou hôte:port)' },
   slack: { label: 'Slack', field: 'URL du webhook entrant Slack' },
   teams: { label: 'Teams', field: 'URL du webhook (Workflows Teams)' },
   webhook: { label: 'Webhook', field: 'URL qui reçoit le résultat en JSON' },
@@ -40,6 +42,8 @@ export function requestKey({ methode = 'GET', chemin = '/', corps } = {}) {
 }
 
 const EMAIL = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
+/** Types qui envoient un mail, et acceptent donc des destinataires propres à chaque ronde. */
+const MAIL_TYPES = ['mail', 'smtp'];
 const SEND_TIMEOUT_MS = 10_000;
 const STATUS_LABEL = { ok: 'RAS', alert: 'Alerte', failed: 'Échec', done: 'Réponse', test: 'Test' };
 
@@ -53,19 +57,51 @@ function maskUrl(raw) {
   }
 }
 
+/** Liste d'adresses (chaîne séparée par virgules, points-virgules ou espaces, ou tableau), dédoublonnée. */
+export function parseRecipients(input) {
+  const list = (Array.isArray(input) ? input : [input])
+    .flatMap((s) => String(s ?? '').split(/[,;\s]+/))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const bad = list.filter((a) => !EMAIL.test(a));
+  if (bad.length) throw new Error(`adresse invalide : ${bad.join(', ')}.`);
+  return [...new Set(list)];
+}
+
+/** Canal SMTP : sa propre connexion (hôte, port, identifiant, mot de passe, expéditeur). */
+function smtpConfig(input) {
+  let host = String(input.host ?? input.target ?? '').trim();
+  let port = input.port;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) throw new Error('hôte SMTP sans schéma (ex. smtp.office365.com).');
+  const hp = host.match(/^(.+):(\d+)$/);
+  if (hp) {
+    host = hp[1];
+    if (port == null || String(port).trim() === '') port = hp[2];
+  }
+  if (!/^[A-Za-z0-9.-]+$/.test(host)) throw new Error('hôte SMTP requis (ex. smtp.office365.com ou smtp.office365.com:587).');
+  port = port == null || String(port).trim() === '' ? 587 : Number(port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('port SMTP invalide (entier entre 1 et 65535).');
+  const user = String(input.user ?? '').trim();
+  const pass = String(input.token ?? input.pass ?? '');
+  const from = String(input.from ?? '').trim() || (EMAIL.test(user) ? user : '');
+  if (!from) throw new Error('adresse expéditrice requise (ou un identifiant qui est une adresse mail).');
+  if (!EMAIL.test(from)) throw new Error(`adresse expéditrice invalide : ${from}.`);
+  const to = parseRecipients(input.to ?? []);
+  return {
+    config: { host, port, secure: port === 465, user, pass, from, to },
+    preview: `${from} via ${host}:${port}${to.length ? ` → ${to.join(', ')}` : ' · destinataires donnés par chaque ronde'}`,
+  };
+}
+
 /** Valide et normalise la configuration d'un canal. Lève une Error lisible. */
 export function normalizeConfig(type, input = {}) {
-  if (!CHANNEL_TYPES[type]) throw new Error(`type de canal inconnu (${type}) : mail, slack, teams ou webhook.`);
+  if (!CHANNEL_TYPES[type]) throw new Error(`type de canal inconnu (${type}) : ${Object.keys(CHANNEL_TYPES).join(', ')}.`);
   if (type === 'mail') {
-    const to = String(input.to ?? input.target ?? '')
-      .split(/[,;\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const to = parseRecipients(input.to ?? input.target ?? '');
     if (!to.length) throw new Error('au moins une adresse mail.');
-    const bad = to.filter((a) => !EMAIL.test(a));
-    if (bad.length) throw new Error(`adresse invalide : ${bad.join(', ')}.`);
-    return { config: { to: [...new Set(to)] }, preview: [...new Set(to)].join(', ') };
+    return { config: { to }, preview: to.join(', ') };
   }
+  if (type === 'smtp') return smtpConfig(input);
   if (type === 'api') {
     const url = String(input.url ?? input.target ?? '').trim();
     let u;
@@ -106,7 +142,7 @@ export function runMessage({ task, run, publicUrl }) {
   return { title: `${label} : ${task.name}`, status: run.status, label, text, url, task: task.name, runId: run.id };
 }
 
-export function createChannels({ store, appSecret, mailer, config, fetchImpl = fetch, log = console }) {
+export function createChannels({ store, appSecret, mailer, config, fetchImpl = fetch, smtpTransport = defaultSmtpTransport, log = console }) {
   const db = store.db;
   const q = (sql) => db.prepare(sql);
   const key = deriveKey(appSecret, 'channels');
@@ -138,13 +174,28 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
     }
   }
 
-  /** Envoie un message sur un canal. Lève une Error en cas d'échec. */
-  async function deliver(row, m) {
+  /**
+   * Envoie un message sur un canal. Lève une Error en cas d'échec. recipients :
+   * destinataires propres à la ronde (mail, smtp), sinon ceux du canal.
+   */
+  async function deliver(row, m, recipients = []) {
     const c = secretOf(row);
     const link = m.url ? `\n\nDétail : ${m.url}` : '';
-    if (row.type === 'mail') {
-      if (!mailer.enabled) throw new Error('SMTP non configuré sur le serveur (SMTP_HOST).');
-      await mailer.send({ to: c.to.join(', '), subject: `[ronde] ${m.title}`, text: `${m.text}${link}` });
+    if (MAIL_TYPES.includes(row.type)) {
+      const to = recipients?.length ? recipients : (c.to ?? []);
+      if (!to.length) throw new Error('aucun destinataire : donnes-en au canal ou à la ronde.');
+      const mail = { to: to.join(', '), subject: `[ronde] ${m.title}`, text: `${m.text}${link}` };
+      if (row.type === 'mail') {
+        if (!mailer.enabled) throw new Error('SMTP non configuré sur le serveur (SMTP_HOST).');
+        return mailer.send(mail);
+      }
+      // Un transport par envoi : hors 465, STARTTLS exigé dès qu'il y a un identifiant.
+      const transport = smtpTransport({ host: c.host, port: c.port, secure: c.secure, user: c.user || undefined, pass: c.pass, requireTLS: !c.secure && !!c.user });
+      try {
+        await transport.sendMail({ from: c.from, ...mail });
+      } finally {
+        transport.close?.();
+      }
     } else if (row.type === 'slack') {
       await post(c.url, { text: `*${m.title}*\n${m.text}${m.url ? `\n<${m.url}|Voir le passage>` : ''}` });
     } else if (row.type === 'teams') {
@@ -214,6 +265,23 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
 
   const byName = (name) => q('SELECT * FROM channels WHERE name = ?').get(String(name ?? '').trim());
 
+  /** Résout et valide les canaux voulus pour une ronde. Lève une Error lisible. */
+  const resolveWanted = (wanted) =>
+    wanted.map((w) => {
+      const row = w.id ? q('SELECT * FROM channels WHERE id = ?').get(w.id) : byName(w.name);
+      if (!row) throw new Error(`canal « ${w.name ?? w.id} » introuvable (Réglages > Canaux).`);
+      if (row.type === 'api') {
+        const requests = (w.requests ?? []).map((x) => ({ methode: String(x.methode ?? 'GET').toUpperCase(), chemin: String(x.chemin ?? '/'), ...(x.corps != null ? { corps: x.corps } : {}) }));
+        const mode = w.mode === 'free' || w.mode === 'libre' ? 'free' : 'requests';
+        return { row, mode, requests, recipients: [] };
+      }
+      const mode = w.mode === 'always' || w.mode === 'toujours' ? 'always' : 'alert';
+      const recipients = MAIL_TYPES.includes(row.type) ? parseRecipients(w.recipients ?? []) : [];
+      if (row.type === 'smtp' && !recipients.length && !secretOf(row).to?.length)
+        throw new Error(`le canal « ${row.name} » n'a pas de destinataire par défaut : donne les destinataires de cette ronde.`);
+      return { row, mode, requests: [], recipients };
+    });
+
   return {
     list() {
       return q('SELECT * FROM channels ORDER BY name COLLATE NOCASE').all().map(pub);
@@ -239,6 +307,8 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       const { config: c, preview } = normalizeConfig(type, input);
       const now = nowIso();
       const existing = byName(n);
+      // SMTP réenregistré sans mot de passe : on garde celui déjà enregistré.
+      if (type === 'smtp' && existing?.type === 'smtp' && !c.pass) c.pass = secretOf(existing).pass ?? '';
       if (existing) {
         q('UPDATE channels SET type = ?, config = ?, preview = ?, tested_at = NULL, test_ok = NULL, test_error = NULL, updated_at = ? WHERE id = ?').run(
           type,
@@ -273,8 +343,11 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       })();
     },
 
-    /** Envoie un message de test et retient le résultat. Retourne { ok, error }. */
-    async test(id, text = 'Message de test : ce canal recevra les réponses des rondes.') {
+    /**
+     * Envoie un message de test et retient le résultat. Retourne { ok, error }. Mail, SMTP :
+     * aux destinataires donnés, sinon ceux du canal, sinon (SMTP) à l'expéditeur, ce qui vérifie l'authentification.
+     */
+    async test(id, text = 'Message de test : ce canal recevra les réponses des rondes.', { to } = {}) {
       const row = q('SELECT * FROM channels WHERE id = ?').get(id);
       if (!row) return { ok: false, error: 'canal introuvable.' };
       let error = null;
@@ -285,7 +358,9 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
           if (r.statut === 401 || r.statut === 403) error = `clé refusée (HTTP ${r.statut}).`;
           else if (r.statut >= 500) error = `HTTP ${r.statut}.`;
         } else {
-          await deliver(row, { title: `Test du canal « ${row.name} »`, status: 'test', label: 'Test', text, url: config.publicUrl || null, task: null, runId: null });
+          let recipients = MAIL_TYPES.includes(row.type) ? parseRecipients(to ?? []) : [];
+          if (!recipients.length && row.type === 'smtp' && !secretOf(row).to?.length) recipients = [secretOf(row).from];
+          await deliver(row, { title: `Test du canal « ${row.name} »`, status: 'test', label: 'Test', text, url: config.publicUrl || null, task: null, runId: null }, recipients);
         }
       } catch (err) {
         error = err.message;
@@ -294,38 +369,36 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       return { ok: !error, error };
     },
 
+    /** Vérifie des canaux voulus sans rien enregistrer (avant de créer une ronde). */
+    check(wanted) {
+      resolveWanted(wanted);
+    },
+
     /** Canaux de sortie d'une ronde. */
     forTask(taskId) {
       return q(
-        `SELECT c.*, tc.mode, tc.requests FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? ORDER BY c.name COLLATE NOCASE`,
+        `SELECT c.*, tc.mode, tc.requests, tc.recipients FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? ORDER BY c.name COLLATE NOCASE`,
       )
         .all(taskId)
-        .map((r) => ({ ...pub(r), mode: r.mode, requests: JSON.parse(r.requests ?? '[]') }));
+        .map((r) => ({ ...pub(r), mode: r.mode, requests: JSON.parse(r.requests ?? '[]'), recipients: JSON.parse(r.recipients ?? '[]') }));
     },
 
     /**
-     * Remplace les canaux d'une ronde : [{ name | id, mode }]. Note le changement dans
-     * l'historique. Lève une Error si un canal n'existe pas.
+     * Remplace les canaux d'une ronde : [{ name | id, mode, recipients? }]. recipients (mail,
+     * smtp) : destinataires propres à la ronde, sinon ceux du canal. Note le changement dans
+     * l'historique. Lève une Error si un canal n'existe pas ou n'a aucun destinataire.
      */
     setForTask(taskId, wanted, { by = 'ui' } = {}) {
-      const resolved = wanted.map((w) => {
-        const row = w.id ? q('SELECT * FROM channels WHERE id = ?').get(w.id) : byName(w.name);
-        if (!row) throw new Error(`canal « ${w.name ?? w.id} » introuvable (Réglages > Canaux).`);
-        if (row.type === 'api') {
-          const requests = (w.requests ?? []).map((x) => ({ methode: String(x.methode ?? 'GET').toUpperCase(), chemin: String(x.chemin ?? '/'), ...(x.corps != null ? { corps: x.corps } : {}) }));
-          const mode = w.mode === 'free' || w.mode === 'libre' ? 'free' : 'requests';
-          return { row, mode, requests };
-        }
-        const mode = w.mode === 'always' || w.mode === 'toujours' ? 'always' : 'alert';
-        return { row, mode, requests: [] };
-      });
+      const resolved = resolveWanted(wanted);
       const describe = (list) =>
-        list.length ? list.map((c) => `${c.name} (${MODES[c.mode]}${c.mode === 'requests' ? ` : ${c.requests.length}` : ''})`).join(', ') : 'aucun';
+        list.length
+          ? list.map((c) => `${c.name} (${MODES[c.mode]}${c.mode === 'requests' ? ` : ${c.requests.length}` : ''}${c.recipients?.length ? `, à ${c.recipients.join(', ')}` : ''})`).join(', ')
+          : 'aucun';
       const before = describe(this.forTask(taskId));
       db.transaction(() => {
         q('DELETE FROM task_channels WHERE task_id = ?').run(taskId);
-        for (const { row, mode, requests } of resolved)
-          q('INSERT INTO task_channels (task_id, channel_id, mode, requests) VALUES (?, ?, ?, ?)').run(taskId, row.id, mode, JSON.stringify(requests));
+        for (const { row, mode, requests, recipients } of resolved)
+          q('INSERT INTO task_channels (task_id, channel_id, mode, requests, recipients) VALUES (?, ?, ?, ?, ?)').run(taskId, row.id, mode, JSON.stringify(requests), JSON.stringify(recipients));
       })();
       const after = describe(this.forTask(taskId));
       if (before !== after) {
@@ -343,13 +416,13 @@ export function createChannels({ store, appSecret, mailer, config, fetchImpl = f
       if (run.stopped) return 0; // arrêté à la main : c'est toi qui l'as demandé
       const problem = run.status === 'alert' || run.status === 'failed';
       const m = runMessage({ task, run, publicUrl: config.publicUrl });
-      const attached = q(`SELECT c.*, tc.mode FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? AND c.type != 'api'`).all(task.id);
+      const attached = q(`SELECT c.*, tc.mode, tc.recipients FROM task_channels tc JOIN channels c ON c.id = tc.channel_id WHERE tc.task_id = ? AND c.type != 'api'`).all(task.id);
       let sent = 0;
       if (attached.length) {
         for (const row of attached) {
           if (row.mode !== 'always' && !problem) continue;
           try {
-            await deliver(row, m);
+            await deliver(row, m, JSON.parse(row.recipients ?? '[]'));
             sent += 1;
           } catch (err) {
             log.error(`[ronde] canal « ${row.name} », passage #${run.id} : ${err.message}`);

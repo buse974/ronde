@@ -77,11 +77,17 @@ Le « coût estimé » affiché est l'équivalent API renvoyé par Claude : indi
 
 ### Canaux et mails d'alerte
 
-Un **canal**, c'est là où ronde envoie la réponse d'une ronde : **mail**, **Slack** (webhook entrant), **Teams** (webhook Workflows) ou **webhook** générique (JSON, jeton Bearer facultatif : ntfy, n8n, Jeedom…). Ils se créent et se testent dans **Réglages > Canaux**, ou depuis Claude Code par MCP (« crée un canal Slack avec ce webhook et teste-le »). Les accès sont chiffrés en base et ne sont jamais réaffichés.
+Un **canal**, c'est là où ronde envoie la réponse d'une ronde : **mail** (par le relais SMTP du serveur), **SMTP** (un compte d'envoi avec sa propre connexion), **Slack** (webhook entrant), **Teams** (webhook Workflows) ou **webhook** générique (JSON, jeton Bearer facultatif : ntfy, n8n, Jeedom…). Ils se créent et se testent dans **Réglages > Canaux**, ou depuis Claude Code par MCP (« crée un canal Slack avec ce webhook et teste-le »). Les accès sont chiffrés en base et ne sont jamais réaffichés.
 
 Chaque ronde choisit ses canaux, **en cas d'alerte** (réponse autre que RAS, ou échec) ou **à chaque passage** : bouton **Configuration** de la ronde, ou demande à Claude (« envoie le résumé sur Slack chaque matin »). C'est toujours ronde qui envoie, jamais Claude.
 
 Un canal **API** donne à une ronde le droit d'appeler une API HTTP (REST, JSON-RPC, GraphQL… : Jeedom, Home Assistant…). Le canal porte l'adresse et la clé ; Claude construit la requête et l'envoie avec l'outil `appeler_canal`, servi par un relais interne de ronde qui ajoute la clé (en-tête, paramètre d'URL, Basic, ou `{{cle}}` dans le corps) et la masque dans les réponses. Claude ne voit jamais la clé et n'a ni `Bash` ni `curl`. En conversation, il essaie librement avec toi (et lit la doc de l'API) ; quand une requête fait ce qu'il faut, il l'enregistre sur la ronde et l'écrit dans son prompt. Pendant un passage, seules les requêtes enregistrées passent. Si la clé change, tu la changes une fois dans le canal.
+
+Un canal **SMTP** porte sa propre connexion : hôte (ou `hôte:port`, 587 par défaut), identifiant, mot de passe, expéditeur (par défaut l'identifiant) et, si tu veux, des destinataires par défaut. Port 465 : TLS implicite ; sur un autre port, STARTTLS est exigé dès qu'il y a un identifiant, le mot de passe ne part jamais en clair. Sans destinataire par défaut, le test part à l'expéditeur (ce qui vérifie l'authentification). Pour changer les destinataires par défaut, réenregistre le canal sous le même nom en laissant le mot de passe vide : l'ancien est gardé.
+
+> Office 365 : hôte `smtp.office365.com`, port 587, identifiant = l'adresse de la boîte (`monitoring@…`). Active **SMTP authentifié** sur cette boîte (centre d'administration Microsoft 365 > Utilisateurs > Courrier > Gérer les applications de messagerie), sinon l'envoi est refusé (`535 5.7.139`). Une **boîte partagée** n'a pas de mot de passe utilisable : elle ne peut pas s'authentifier tant que sa connexion n'est pas débloquée (compte activé, avec un mot de passe).
+
+**Destinataires par ronde** : sur un canal Mail ou SMTP, chaque ronde peut donner ses propres destinataires (popup **Configuration**, Claude, ou MCP), à la place de ceux du canal. Un même canal SMTP sert ainsi à plusieurs rondes qui écrivent à des personnes différentes. Un canal SMTP sans destinataire par défaut exige ceux de la ronde.
 
 > Jeedom : la clé à donner est celle de **Réglages > Système > Configuration > API** (64 caractères), pas la valeur chiffrée stockée en base.
 

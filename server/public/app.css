@@ -586,6 +586,7 @@ h2.genre.oneshot::before { background: var(--oneshot); }
 
 /* --- Canaux ------------------------------------------------------------- */
 .type.canal-mail { color: var(--craie); background: color-mix(in srgb, var(--craie) 10%, transparent); }
+.type.canal-smtp { color: var(--craie); background: color-mix(in srgb, var(--craie) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--craie) 30%, transparent); }
 .type.canal-slack { color: #e8a5ff; background: color-mix(in srgb, #e8a5ff 14%, transparent); }
 .type.canal-teams { color: #9ba7ff; background: color-mix(in srgb, #9ba7ff 16%, transparent); }
 .type.canal-webhook { color: var(--alerte); background: color-mix(in srgb, var(--alerte) 12%, transparent); }
@@ -598,6 +599,8 @@ h2.genre.oneshot::before { background: var(--oneshot); }
 .canaux-ronde form { display: grid; gap: 0.4rem; margin-top: 0.5rem; }
 .ligne-canal { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin: 0; font-weight: 500; }
 .ligne-canal select { width: auto; margin: 0; }
+.destinataires-canal { margin: 0.25rem 0 0.75rem; font-size: 0.85rem; font-weight: 400; }
+.destinataires-canal input { margin-top: 0.2rem; }
 
 .type.canal-api { color: var(--ras); background: color-mix(in srgb, var(--ras) 14%, transparent); }
 .config-ronde ul.requetes { margin: 0.3rem 0 0.4rem; padding-left: 1.1rem; font-size: var(--step--1); }

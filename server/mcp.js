@@ -284,7 +284,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
       'list_canaux',
       {
         title: 'Canaux',
-        description: 'Liste les canaux d’envoi (mail, Slack, Teams, webhook) : nom, type, destination masquée, dernier test.',
+        description: 'Liste les canaux (mail, SMTP, Slack, Teams, webhook, API) : nom, type, destination masquée (jamais de mot de passe ni de clé), dernier test.',
         annotations: { readOnlyHint: true },
       },
       async () => ok(channels.list()),
@@ -295,20 +295,24 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
       {
         title: 'Créer un canal',
         description:
-          'Crée un canal, ou le remplace si le nom existe, puis le teste. type : mail (destination = adresses séparées par des virgules), slack (URL https://hooks.slack.com/…), teams (URL du webhook Workflows), webhook (URL qui reçoit le résultat en JSON, jeton Bearer facultatif), api (destination = URL de base de l’API, jeton = sa clé, emplacement_cle = bearer | header | query | basic | body, nom_cle = nom de l’en-tête ou du paramètre ; avec body, la requête écrit {{cle}}). Les accès sont chiffrés et ne sont plus jamais renvoyés.',
+          'Crée un canal, ou le remplace si le nom existe, puis le teste. type : mail (destination = adresses séparées par des virgules, envoi par le SMTP du serveur), smtp (sa propre connexion : destination = hôte ou hôte:port, port facultatif, 587 par défaut, 465 = TLS implicite, sinon STARTTLS ; utilisateur = identifiant ; jeton = mot de passe, gardé si on remplace le canal sans le redonner ; expediteur = adresse d’envoi, par défaut l’identifiant ; destinataires facultatifs : ceux par défaut, chaque ronde peut donner les siens ; sans destinataire, le test part à l’expéditeur), slack (URL https://hooks.slack.com/…), teams (URL du webhook Workflows), webhook (URL qui reçoit le résultat en JSON, jeton Bearer facultatif), api (destination = URL de base de l’API, jeton = sa clé, emplacement_cle = bearer | header | query | basic | body, nom_cle = nom de l’en-tête ou du paramètre ; avec body, la requête écrit {{cle}}). Les accès sont chiffrés et ne sont plus jamais renvoyés.',
         inputSchema: {
           nom: z.string().min(1).max(60),
-          type: z.enum(['mail', 'slack', 'teams', 'webhook', 'api']),
+          type: z.enum(['mail', 'smtp', 'slack', 'teams', 'webhook', 'api']),
           destination: z.string().min(1),
           jeton: z.string().optional(),
           emplacement_cle: z.enum(['bearer', 'header', 'query', 'basic', 'body']).optional(),
           nom_cle: z.string().optional(),
+          port: z.number().int().optional(),
+          utilisateur: z.string().optional(),
+          expediteur: z.string().optional(),
+          destinataires: z.string().optional(),
         },
       },
-      async ({ nom, type, destination, jeton, emplacement_cle, nom_cle }) => {
+      async ({ nom, type, destination, jeton, emplacement_cle, nom_cle, port, utilisateur, expediteur, destinataires }) => {
         let c;
         try {
-          c = channels.save({ name: nom, type, target: destination, token: jeton, place: emplacement_cle, keyName: nom_cle });
+          c = channels.save({ name: nom, type, target: destination, token: jeton, place: emplacement_cle, keyName: nom_cle, port, user: utilisateur, from: expediteur, to: destinataires });
         } catch (err) {
           return fail(`Canal non enregistré : ${err.message}`);
         }
@@ -321,13 +325,14 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
       'test_canal',
       {
         title: 'Tester un canal',
-        description: 'Envoie un message sur un canal (message de test par défaut) et renvoie le résultat.',
-        inputSchema: { nom: z.string().min(1), message: z.string().max(4000).optional() },
+        description:
+          'Envoie un message sur un canal (message de test par défaut) et renvoie le résultat. destinataires (mail, smtp ; facultatif) : adresses à qui écrire, sinon celles du canal, sinon l’expéditeur du canal SMTP.',
+        inputSchema: { nom: z.string().min(1), message: z.string().max(4000).optional(), destinataires: z.string().optional() },
       },
-      async ({ nom, message }) => {
+      async ({ nom, message, destinataires }) => {
         const c = channels.findByName(nom);
         if (!c) return fail(`Canal « ${nom} » introuvable.`);
-        const t = await channels.test(c.id, message);
+        const t = await channels.test(c.id, message, { to: destinataires });
         return t.ok ? ok({ canal: c.name, envoye: true }) : fail(`Échec de l’envoi sur « ${c.name} » : ${t.error}`);
       },
     );
@@ -336,18 +341,25 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
       'set_canaux_ronde',
       {
         title: 'Canaux d’une ronde',
-        description: 'Remplace la liste des canaux d’une ronde. quand : « alerte » (réponse autre que RAS ou échec) ou « toujours » (à chaque passage). Liste vide : aucun canal (mail d’alerte par défaut).',
-        inputSchema: { id: z.number().int(), canaux: z.array(z.object({ nom: z.string(), quand: z.enum(['alerte', 'toujours']).default('alerte') })) },
+        description:
+          'Remplace la liste des canaux d’une ronde. quand : « alerte » (réponse autre que RAS ou échec) ou « toujours » (à chaque passage). destinataires (canaux mail et smtp, facultatif) : adresses propres à cette ronde, à la place de celles du canal ; obligatoire pour un canal smtp sans destinataire par défaut. Liste vide : aucun canal (mail d’alerte par défaut).',
+        inputSchema: {
+          id: z.number().int(),
+          canaux: z.array(z.object({ nom: z.string(), quand: z.enum(['alerte', 'toujours']).default('alerte'), destinataires: z.array(z.string()).optional() })),
+        },
       },
       async ({ id, canaux }) => {
         const t = store.getTask(id);
         if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée)' : ''}.`);
         try {
-          channels.setForTask(id, canaux.map((c) => ({ name: c.nom, mode: c.quand === 'toujours' ? 'always' : 'alert' })), { by: 'mcp' });
+          channels.setForTask(id, canaux.map((c) => ({ name: c.nom, mode: c.quand === 'toujours' ? 'always' : 'alert', recipients: c.destinataires })), { by: 'mcp' });
         } catch (err) {
           return fail(err.message);
         }
-        return ok({ id, canaux: channels.forTask(id).map((c) => ({ nom: c.name, quand: c.mode === 'always' ? 'toujours' : 'alerte' })) });
+        return ok({
+          id,
+          canaux: channels.forTask(id).map((c) => ({ nom: c.name, quand: c.mode === 'always' ? 'toujours' : 'alerte', ...(c.recipients.length ? { destinataires: c.recipients } : {}) })),
+        });
       },
     );
 

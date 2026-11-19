@@ -52,11 +52,21 @@ export function setup({ envToken = null, token = OAUTH, env = {} } = {}) {
     if (String(url).includes('echec')) return new Response('nope', { status: 500 });
     return new Response('ok', { status: 200 });
   };
-  const channels = createChannels({ store, appSecret: 'test-secret', mailer, config, fetchImpl, log: silentLog });
+  // Faux SMTP des canaux « smtp » : chaque envoi est enregistré ici avec les options de connexion.
+  // smtpSent.fail = 'message' : l'envoi suivant échoue avec ce message.
+  const smtpSent = [];
+  const smtpTransport = (options) => ({
+    async sendMail(mail) {
+      if (smtpSent.fail) throw new Error(smtpSent.fail);
+      smtpSent.push({ options, mail });
+    },
+    close() {},
+  });
+  const channels = createChannels({ store, appSecret: 'test-secret', mailer, config, fetchImpl, smtpTransport, log: silentLog });
   const relay = createRelay({ channels, config, log: silentLog });
   const executor = createExecutor({ store, config, claudeAuth, channels, relay, log: silentLog });
   const app = createApp({ store, config, claudeAuth, mailer, executor, channels, relay, setupCode: 'ABCDE-12345' });
-  return { config, store, claudeAuth, mailer, executor, channels, relay, posts, app };
+  return { config, store, claudeAuth, mailer, executor, channels, relay, posts, smtpSent, app };
 }
 
 export const task = (over = {}) => ({

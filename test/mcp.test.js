@@ -260,4 +260,26 @@ describe('canaux via MCP', () => {
     const unknown = await call(app, tok, 'set_canaux_ronde', { id, canaux: [{ nom: 'Inconnu' }] });
     expect(unknown.isError).toBe(true);
   });
+
+  it('crée un canal SMTP et le branche sur une ronde avec ses destinataires', async () => {
+    const { app, store, smtpSent } = await installedApp();
+    const { access_token: tok } = await connect(app);
+    const created = await call(app, tok, 'create_canal', {
+      nom: 'Office 365', type: 'smtp', destination: 'smtp.office365.com', port: 587, utilisateur: 'monitoring@exemple.fr', jeton: 'mdp-secret', expediteur: 'monitoring@exemple.fr',
+    });
+    expect(created.data).toMatchObject({ name: 'Office 365', type: 'smtp', test: 'message de test envoyé' });
+    expect(created.text).not.toContain('mdp-secret');
+    expect(smtpSent.at(-1).mail.to).toBe('monitoring@exemple.fr');
+
+    const sent = await call(app, tok, 'test_canal', { nom: 'Office 365', destinataires: 'moi@exemple.fr' });
+    expect(sent.data).toMatchObject({ envoye: true });
+    expect(smtpSent.at(-1).mail.to).toBe('moi@exemple.fr');
+
+    const id = store.createTask({ name: 'Disque', prompt: 'p', cron: '0 * * * *', allowed_tools: ['Read'], max_turns: 2, timeout_sec: 60, active: true });
+    const none = await call(app, tok, 'set_canaux_ronde', { id, canaux: [{ nom: 'Office 365' }] });
+    expect(none.isError).toBe(true);
+    const set = await call(app, tok, 'set_canaux_ronde', { id, canaux: [{ nom: 'Office 365', quand: 'alerte', destinataires: ['infra@exemple.fr'] }] });
+    expect(set.data.canaux).toEqual([{ nom: 'Office 365', quand: 'alerte', destinataires: ['infra@exemple.fr'] }]);
+    expect((await call(app, tok, 'list_canaux')).text).not.toContain('mdp-secret');
+  });
 });

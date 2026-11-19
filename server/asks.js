@@ -71,7 +71,7 @@ export function channelsContext(available = [], current = null) {
   const out = available.filter((c) => c.type !== 'api');
   const api = available.filter((c) => c.type === 'api');
   const list = out.length ? out.map((c) => `« ${c.name} » (${c.typeLabel ?? c.type})`).join(', ') : 'aucun (l’administrateur les ajoute dans Réglages > Canaux)';
-  let text = `Canaux d'envoi configurés : ${list}. C'est ronde qui envoie la réponse d'une ronde sur ses canaux, « en cas d'alerte » (réponse autre que RAS, ou échec) ou « à chaque passage » ; sans canal, les alertes partent au mail par défaut des réglages. Tu ne peux pas créer de canal, seulement en brancher un existant.`;
+  let text = `Canaux d'envoi configurés : ${list}. C'est ronde qui envoie la réponse d'une ronde sur ses canaux, « en cas d'alerte » (réponse autre que RAS, ou échec) ou « à chaque passage » ; sans canal, les alertes partent au mail par défaut des réglages. Un canal Mail ou SMTP peut recevoir des destinataires propres à la ronde ("destinataires": ["a@exemple.fr"]), à la place de ceux du canal ; un canal SMTP sans destinataire par défaut l'exige. Tu ne peux pas créer de canal, seulement en brancher un existant.`;
   if (api.length) {
     text += `\nCanaux API configurés : ${api.map((c) => `« ${c.name} »`).join(', ')}. Ici, en conversation avec l'administrateur, tu peux les essayer avec l'outil appeler_canal (requêtes libres). Démarche : si besoin, lis la documentation de l'API avec WebFetch ; essaie la requête et montre le résultat ; ne déclenche une action qui change quelque chose (allumer, éteindre, écrire…) que si l'administrateur te l'a demandé. Quand une requête fait ce qu'il faut et que l'administrateur valide : branche le canal sur la ronde avec cette requête enregistrée ("requetes": [{"methode": "...", "chemin": "...", "corps": ...}]) et écris dans le prompt de la ronde l'appel exact à faire avec l'outil appeler_canal (canal, méthode, chemin, corps). La clé n'apparaît jamais : si l'API la veut dans la requête, écris {{cle}}. Pendant un passage, seule une requête enregistrée à l'identique passe.`;
   }
@@ -79,7 +79,7 @@ export function channelsContext(available = [], current = null) {
     const fmt = (c) =>
       c.type === 'api'
         ? `« ${c.name} » (API, ${c.mode === 'free' ? 'toutes les requêtes' : `requêtes enregistrées : ${(c.requests ?? []).map((r) => `${r.methode} ${r.chemin}${r.corps != null ? ` ${typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps)}` : ''}`).join(' | ') || 'aucune'}`})`
-        : `« ${c.name} » (${c.mode === 'always' ? 'à chaque passage' : 'en cas d’alerte'})`;
+        : `« ${c.name} » (${c.mode === 'always' ? 'à chaque passage' : 'en cas d’alerte'}${c.recipients?.length ? `, à ${c.recipients.join(', ')}` : ''})`;
     text += `\nCanaux de cette ronde : ${current.length ? current.map(fmt).join(', ') : 'aucun'}.`;
   }
   return text;
@@ -153,7 +153,7 @@ Règles d'une ronde :
 ${hostDataListing(hostDataDir)}
 - ${toolsRule(allowedTools)}
 - Fréquence : expression cron à 5 champs, fuseau ${timezone}. Chaîne vide pour une ronde manuelle.
-- ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ou si la ronde appelle un canal API, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [...]}] à la ronde proposée.
+- ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ou si la ronde appelle un canal API, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal Mail ou SMTP>", "quand": "alerte", "destinataires": ["..."]}, {"nom": "<canal API>", "requetes": [...]}] à la ronde proposée ("destinataires" facultatif).
 
 Ta démarche :
 1. Si c'est utile, lis les fichiers de ${hostDataDir} pour connaître les valeurs actuelles et proposer des seuils réalistes.
@@ -221,7 +221,7 @@ soit
 soit
 {"type": "action", "action": "modifier", "ronde": {"name": "...", "prompt": "...", "cron": "...", "allowed_tools": ["Read"], "max_turns": 4, "timeout_sec": 300, "canaux": [...]}} ("canaux" facultatif : la liste complète, pour changer prompt et canaux d'un seul coup)
 soit
-{"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [{"methode": "POST", "chemin": "/...", "corps": {...}}]}]} (liste complète, canaux déjà branchés compris ; [] pour n'en garder aucun)
+{"type": "action", "action": "canaux", "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal Mail ou SMTP>", "quand": "alerte", "destinataires": ["..."]}, {"nom": "<canal API>", "requetes": [{"methode": "POST", "chemin": "/...", "corps": {...}}]}]} (liste complète, canaux déjà branchés et leurs destinataires compris ; [] pour n'en garder aucun)
 soit
 {"type": "action", "action": "pause"} (ou "reprendre", "archiver", {"type": "action", "action": "restaurer", "active": true})
 (dans une proposition ou une modification, reprends tous les champs, y compris ceux qui ne changent pas).
@@ -392,7 +392,7 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     return error ? { data: parsed.data, error } : { data: parsed.data };
   }
 
-  /** [{ nom, quand }] → [{ name, mode }], en vérifiant que chaque canal existe. */
+  /** [{ nom, quand, destinataires? }] → [{ name, mode, recipients? }], en vérifiant que chaque canal existe. */
   function wantedChannels(list) {
     if (!channels) throw new Error('canaux indisponibles.');
     return list.map((c) => {
@@ -400,7 +400,8 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
       if (!channels.findByName(name)) throw new Error(`canal « ${name} » introuvable (Réglages > Canaux).`);
       const quand = c.quand ?? c.mode;
       if (Array.isArray(c.requetes) || quand === 'libre') return { name, mode: quand === 'libre' ? 'free' : 'requests', requests: c.requetes ?? [] };
-      return { name, mode: ['toujours', 'always'].includes(quand) ? 'always' : 'alert' };
+      const recipients = c.destinataires ?? c.recipients;
+      return { name, mode: ['toujours', 'always'].includes(quand) ? 'always' : 'alert', ...(recipients ? { recipients } : {}) };
     });
   }
 
@@ -412,7 +413,7 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
       if (row) throw new Error('cette conversation a déjà sa ronde.');
       const { data, error } = candidateOf(block.ronde ?? {});
       if (error) throw new Error(error);
-      if (Array.isArray(block.ronde?.canaux)) wantedChannels(block.ronde.canaux); // vérifie avant de créer
+      if (Array.isArray(block.ronde?.canaux)) channels.check(wantedChannels(block.ronde.canaux)); // vérifie avant de créer
       const taskId = store.createTask(data, { by: 'claude', askId: ask.id });
       if (Array.isArray(block.ronde?.canaux) && block.ronde.canaux.length) channels.setForTask(taskId, wantedChannels(block.ronde.canaux), { by: 'claude' });
       return;

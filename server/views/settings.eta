@@ -104,8 +104,8 @@
 <section class="reglage" aria-labelledby="r-canaux" id="canaux">
   <div>
     <h2 id="r-canaux">Canaux</h2>
-    <p>Là où ronde envoie la réponse d'une ronde : mail, Slack, Teams ou un webhook (ntfy, n8n…). Un canal <strong>API</strong> donne en plus à une ronde le droit d'appeler une API (Jeedom, Home Assistant…) : Claude construit la requête, ronde ajoute la clé et l'envoie. Les accès sont chiffrés et ne sont plus réaffichés.</p>
-    <p class="discret">Chaque ronde choisit ses canaux, en cas d'alerte ou à chaque passage (bouton Configuration de la ronde, ou demande-le à Claude).</p>
+    <p>Là où ronde envoie la réponse d'une ronde : mail (par le SMTP du serveur), <strong>SMTP</strong> (un compte d'envoi avec sa propre connexion, Office 365 par exemple), Slack, Teams ou un webhook (ntfy, n8n…). Un canal <strong>API</strong> donne en plus à une ronde le droit d'appeler une API (Jeedom, Home Assistant…) : Claude construit la requête, ronde ajoute la clé et l'envoie. Les accès sont chiffrés et ne sont plus réaffichés.</p>
+    <p class="discret">Chaque ronde choisit ses canaux, en cas d'alerte ou à chaque passage (bouton Configuration de la ronde, ou demande-le à Claude). Sur un canal Mail ou SMTP, chaque ronde peut donner ses propres destinataires : un même canal sert à plusieurs rondes.</p>
   </div>
   <div>
     <% if (it.channels.length) { %>
@@ -128,24 +128,46 @@
     <% } else { %>
     <p class="discret">Aucun canal. Sans canal, une ronde envoie ses alertes au mail ci-dessous.</p>
     <% } %>
-    <form method="post" action="/settings/channels" class="ajout-canal">
+    <% const f = it.channelForm ?? {}; %>
+    <form method="post" action="/settings/channels" class="ajout-canal" data-canal>
       <h3>Ajouter un canal</h3>
       <div class="ligne-champs">
         <label>Nom <input name="name" required maxlength="60" placeholder="Slack équipe" value="<%= it.channelForm?.name ?? '' %>"></label>
         <label>Type
           <select name="type">
-            <% Object.entries(it.channelTypes).forEach(([k, v]) => { %><option value="<%= k %>" <%= (it.channelForm?.type ?? 'mail') === k ? 'selected' : '' %>><%= v.label %></option><% }) %>
+            <% Object.entries(it.channelTypes).forEach(([k, v]) => { %><option value="<%= k %>" <%= (f.type ?? 'mail') === k ? 'selected' : '' %>><%= v.label %></option><% }) %>
           </select>
         </label>
       </div>
-      <label>Adresses ou URL
-        <input name="target" required autocomplete="off" placeholder="toi@exemple.fr, ou https://hooks.slack.com/…" <%~ e.channel ? 'aria-invalid="true"' : '' %>>
-        <small class="<%= e.channel ? 'erreur' : '' %>"><%= e.channel ?? 'Mail : adresses séparées par des virgules. Slack, Teams, webhook : l’URL du webhook. API : l’URL de base. Un nom existant remplace le canal.' %></small>
+      <label>Adresses, URL ou hôte
+        <input name="target" required autocomplete="off" placeholder="toi@exemple.fr, https://hooks.slack.com/…, smtp.office365.com" <%~ e.channel ? 'aria-invalid="true"' : '' %>>
+        <small class="<%= e.channel ? 'erreur' : '' %>"><%= e.channel ?? 'Mail : adresses séparées par des virgules. SMTP : l’hôte, ou hôte:port. Slack, Teams, webhook : l’URL du webhook. API : l’URL de base. Un nom existant remplace le canal.' %></small>
       </label>
-      <label>Clé ou jeton (webhook, API ; facultatif)
+      <div data-pour="smtp">
+        <div class="ligne-champs">
+          <label>Port
+            <input name="port" type="number" min="1" max="65535" placeholder="587" value="<%= f.port ?? '' %>">
+          </label>
+          <label>Identifiant
+            <input name="user" autocomplete="off" placeholder="monitoring@exemple.fr" value="<%= f.user ?? '' %>">
+          </label>
+        </div>
+        <label>Mot de passe
+          <input name="pass" type="password" autocomplete="new-password" placeholder="jamais réaffiché">
+          <small>Vide en remplaçant un canal SMTP : le mot de passe enregistré est gardé. 465 : TLS implicite ; autre port : STARTTLS exigé dès qu'il y a un identifiant.</small>
+        </label>
+        <label>Expéditeur
+          <input name="from" type="email" autocomplete="off" placeholder="par défaut, l'identifiant" value="<%= f.from ?? '' %>">
+        </label>
+        <label>Destinataires par défaut (facultatif)
+          <input name="to" autocomplete="off" placeholder="equipe@exemple.fr, astreinte@exemple.fr" value="<%= f.to ?? '' %>">
+          <small>Sinon, chaque ronde donne les siens. Le test part à ces adresses, ou à l'expéditeur.</small>
+        </label>
+      </div>
+      <label data-pour="webhook api">Clé ou jeton (webhook, API ; facultatif)
         <input name="token" type="password" autocomplete="off" placeholder="jamais réaffiché">
       </label>
-      <div class="ligne-champs">
+      <div class="ligne-champs" data-pour="api">
         <label>Clé de l'API, où la mettre
           <select name="place">
             <% Object.entries(it.keyPlaces).forEach(([k, v]) => { %><option value="<%= k %>"><%= v %></option><% }) %>

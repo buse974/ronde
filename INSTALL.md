@@ -213,7 +213,7 @@ systemctl restart ronde       # sans Docker
 
 ## 6. Mails d'alerte
 
-Par défaut, un mail part quand un run est en **alerte** (réponse autre que `RAS`) ou en **échec**. Pour envoyer ailleurs (Slack, Teams, webhook, d'autres adresses), ou à chaque passage, crée des **canaux** dans **Réglages > Canaux** et branche-les sur les rondes (voir le [README](README.md#canaux-et-mails-dalerte)). Les canaux mail utilisent ce même relais SMTP.
+Par défaut, un mail part quand un run est en **alerte** (réponse autre que `RAS`) ou en **échec**. Pour envoyer ailleurs (Slack, Teams, webhook, d'autres adresses), ou à chaque passage, crée des **canaux** dans **Réglages > Canaux** et branche-les sur les rondes (voir le [README](README.md#canaux-et-mails-dalerte)). Les canaux mail utilisent ce même relais SMTP ; un canal **SMTP** porte sa propre connexion (un compte Office 365, par exemple) et n'a besoin d'aucune variable `SMTP_*`. Sur un canal Mail ou SMTP, chaque ronde peut donner ses propres destinataires.
 
 1. Renseigne le relais dans `.env`. Exemple avec un relais authentifié en STARTTLS :
 
@@ -229,6 +229,8 @@ Par défaut, un mail part quand un run est en **alerte** (réponse autre que `RA
 3. Dans **Réglages > Alertes**, saisis l'email destinataire et clique sur « Envoyer un mail de test ».
 
 Sans `SMTP_HOST`, les logs affichent `SMTP_HOST absent : les alertes mail sont désactivées`.
+
+Office 365, en relais global comme en canal SMTP : `smtp.office365.com`, port 587 (STARTTLS), identifiant = adresse de la boîte. Active **SMTP authentifié** sur la boîte, sinon l'envoi est refusé (`535 5.7.139`) ; une boîte partagée ne peut pas s'authentifier tant que sa connexion n'est pas débloquée.
 
 Si le mail de test part mais n'arrive pas, vérifie que le SPF du domaine de `SMTP_FROM` autorise le relais (un SPF en `-all` qui ne liste pas le relais fait rejeter les mails), et regarde les indésirables.
 

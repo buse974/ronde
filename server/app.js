@@ -501,12 +501,17 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
 
   app.post('/tasks/:id/channels', loadTask, (req, res) => {
     // Les requêtes enregistrées d'un canal API sont gardées : la popup ne change que le mode.
+    // Mail, SMTP : destinataires propres à la ronde (vide : ceux du canal).
     const current = channels.forTask(req.task.id);
     const wanted = channels
       .list()
-      .map((c) => ({ id: c.id, mode: req.body[`mode_${c.id}`], requests: current.find((x) => x.id === c.id)?.requests ?? [] }))
+      .map((c) => ({ id: c.id, mode: req.body[`mode_${c.id}`], requests: current.find((x) => x.id === c.id)?.requests ?? [], recipients: req.body[`to_${c.id}`] }))
       .filter((w) => ['alert', 'always', 'requests', 'free'].includes(w.mode));
-    channels.setForTask(req.task.id, wanted, { by: 'ui' });
+    try {
+      channels.setForTask(req.task.id, wanted, { by: 'ui' });
+    } catch (err) {
+      return res.status(400).view('error', { message: `Canaux non enregistrés : ${err.message}` });
+    }
     res.redirect(`/tasks/${req.task.id}`);
   });
 
@@ -635,10 +640,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
   app.post(
     '/settings/channels',
     asyncRoute(async (req, res) => {
-      const form = { name: req.body.name, type: req.body.type };
+      const b = req.body;
+      const form = { name: b.name, type: b.type, port: b.port, user: b.user, from: b.from, to: b.to };
       let c;
       try {
-        c = channels.save({ name: req.body.name, type: req.body.type, target: req.body.target, token: req.body.token, place: req.body.place, keyName: req.body.key_name });
+        const smtp = b.type === 'smtp' ? { port: b.port, user: b.user, from: b.from, to: b.to, token: b.pass } : {};
+        c = channels.save({ name: b.name, type: b.type, target: b.target, token: b.token, place: b.place, keyName: b.key_name, ...smtp });
       } catch (err) {
         res.status(400);
         return settingsView(res, { errors: { channel: `Canal non enregistré : ${err.message}` }, channelForm: form });

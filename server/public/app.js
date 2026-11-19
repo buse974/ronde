@@ -19,6 +19,16 @@ document.addEventListener('DOMContentLoaded', () => {
   apply(false);
 });
 
+// Formulaire d'un canal (Réglages) : même mécanisme, les champs propres au type choisi.
+document.addEventListener('DOMContentLoaded', () => {
+  const form = document.querySelector('form[data-canal]');
+  const type = form?.querySelector('select[name=type]');
+  if (!type) return;
+  const apply = () => form.querySelectorAll('[data-pour]').forEach((el) => el.toggleAttribute('data-actif', el.dataset.pour.split(' ').includes(type.value)));
+  type.addEventListener('change', apply);
+  apply();
+});
+
 // Conversation longue : on arrive au début de la dernière réponse de Claude.
 document.addEventListener('DOMContentLoaded', () => {
   const last = document.getElementById('derniere');

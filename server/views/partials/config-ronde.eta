@@ -13,7 +13,7 @@
     <dt>Déclenchement</dt><dd><% if (t.cron) { %><%= h.cronText(t.cron) %> <code><%= t.cron %></code><% if (t.active && !t.archived_at) { %><br><span class="discret">Prochain passage : <%= h.nextRun(t.cron) %></span><% } %><% } else if (t.run_at) { %><%= h.triggerText(t) %><% } else { %>À la demande (oneshot)<% } %></dd>
     <% const envois = (it.taskChannels || []).filter((c) => c.type !== 'api'), apis = (it.taskChannels || []).filter((c) => c.type === 'api'); %>
     <% if (apis.length) { %><dt>API</dt><dd><% apis.forEach((c) => { %><div><span class="type canal-api"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% if (c.mode === 'requests') { %><ul class="requetes"><% c.requests.forEach((r) => { %><li><code><%= r.methode %> <%= r.chemin %><%= r.corps != null ? ' ' + (typeof r.corps === 'string' ? r.corps : JSON.stringify(r.corps)) : '' %></code></li><% }) %><% if (!c.requests.length) { %><li class="discret">aucune : demande à Claude d'en essayer une et de l'enregistrer</li><% } %></ul><% } %></div><% }) %></dd><% } %>
-    <dt>Envoi</dt><dd><% if (envois.length) { %><% envois.forEach((c, i) => { %><%= i ? ', ' : '' %><span class="type canal-<%= c.type %>"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %></span><% }) %><% } else if (!t.notify) { %>Aucun : simple réponse, rien n'est envoyé<% } else if (it.alertEmail) { %>Mail d'alerte par défaut, à <strong><%= it.alertEmail %></strong>, en cas d'alerte ou d'échec<% } else { %>Rien : aucun canal ni mail d'alerte, <a href="/settings#canaux">à régler</a><% } %></dd>
+    <dt>Envoi</dt><dd><% if (envois.length) { %><% envois.forEach((c, i) => { %><%= i ? ', ' : '' %><span class="type canal-<%= c.type %>"><%= c.name %></span> <span class="discret"><%= it.modes[c.mode] %><%= c.recipients?.length ? ', à ' + c.recipients.join(', ') : '' %></span><% }) %><% } else if (!t.notify) { %>Aucun : simple réponse, rien n'est envoyé<% } else if (it.alertEmail) { %>Mail d'alerte par défaut, à <strong><%= it.alertEmail %></strong>, en cas d'alerte ou d'échec<% } else { %>Rien : aucun canal ni mail d'alerte, <a href="/settings#canaux">à régler</a><% } %></dd>
     <dt>Outils</dt><dd><%= t.allowed_tools.length ? t.allowed_tools.join(', ') : 'aucun' %></dd>
     <dt>Limites</dt><dd><%= t.max_turns %> tours maximum, <%= t.timeout_sec %> s maximum</dd>
     <dt>Créée</dt><dd><%= h.short(t.created_at) %><%= t.created_via === 'mcp' ? ', via MCP' : '' %> · modifiée <%= h.short(t.updated_at) %></dd>
@@ -34,6 +34,11 @@
           <% } %>
         </select>
       </label>
+      <% if (c.type === 'mail' || c.type === 'smtp') { %>
+      <label class="destinataires-canal">Destinataires (vide : ceux du canal)
+        <input name="to_<%= c.id %>" autocomplete="off" value="<%= (cur?.recipients ?? []).join(', ') %>" placeholder="<%= c.preview %>">
+      </label>
+      <% } %>
       <% }) %>
       <div class="actions"><button type="submit" class="compact">Enregistrer</button></div>
     </form>

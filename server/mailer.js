@@ -2,19 +2,27 @@ import nodemailer from 'nodemailer';
 
 const STATUS_LABEL = { alert: 'Alerte', failed: 'Échec' };
 
+/**
+ * Transport SMTP : celui des réglages globaux (SMTP_*) comme celui d'un canal SMTP.
+ * requireTLS : STARTTLS obligatoire, pour qu'un mot de passe ne parte jamais en clair.
+ */
+export function smtpTransport({ host, port, secure, user, pass, rejectUnauthorized = true, requireTLS }) {
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    ...(requireTLS ? { requireTLS: true } : {}),
+    auth: user ? { user, pass } : undefined,
+    tls: { rejectUnauthorized },
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 15_000,
+  });
+}
+
 export function createMailer(config, { transport } = {}) {
   const smtp = config.smtp;
-  const transporter =
-    transport ??
-    (smtp.host
-      ? nodemailer.createTransport({
-          host: smtp.host,
-          port: smtp.port,
-          secure: smtp.secure,
-          auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
-          tls: { rejectUnauthorized: smtp.rejectUnauthorized },
-        })
-      : null);
+  const transporter = transport ?? (smtp.host ? smtpTransport(smtp) : null);
 
   return {
     enabled: !!transporter,
