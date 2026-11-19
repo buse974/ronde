@@ -29,6 +29,18 @@
     <% if (a.result) { %><details><summary>Détail</summary><pre><%= a.result %></pre></details><% } %>
   <% } %>
 
+  <% if (!running && (a.missing_tools || []).length) { %>
+  <section class="carte manque" aria-label="Outils à ajouter">
+    <p class="surtitre">Outil manquant</p>
+    <p>Claude a besoin d'une règle hors des outils proposables. L'ajouter vaut pour toutes les conversations et pour le MCP, y compris <code>test_prompt</code>.</p>
+    <div class="actions">
+    <% a.missing_tools.forEach((rule) => { %>
+      <form method="post" action="/asks/<%= a.id %>/tools"><input type="hidden" name="rule" value="<%= rule %>"><button type="submit" <%= it.busy ? 'disabled' : '' %>>Ajouter <code><%= rule %></code></button></form>
+    <% }) %>
+    </div>
+    <p class="aide">Ou crée la ronde toi-même dans le formulaire manuel, qui accepte toutes les règles.</p>
+  </section>
+  <% } %>
   <% if (!running) { %>
   <form method="post" action="/asks/<%= a.id %>/reply" class="repondre demander-form">
     <label for="reply" class="masque">Continuer la conversation</label>
@@ -69,11 +81,11 @@
         <dt>Outils</dt><dd><%= (p.allowed_tools || []).join(', ') || 'aucun' %></dd>
         <dt>Tours</dt><dd><%= p.max_turns %> au maximum</dd>
       </dl>
-      <% if (p.error) { %><p class="note attention">À corriger avant de créer : <%= p.error %>. Demande à Claude d'ajuster.</p><% } %>
+      <% if (p.error) { %><p class="note attention">À corriger avant de créer : <%= p.error %>. Demande à Claude d'ajuster, ou <a href="/tasks/new?from_ask=<%= a.id %>">ouvre-la dans le formulaire manuel</a>.</p><% } %>
       <details><summary>Prompt de la ronde</summary><pre><%= p.prompt %></pre></details>
       <div class="actions">
         <form method="post" action="/asks/<%= a.id %>/create"><button type="submit" <%= p.error ? 'disabled' : '' %>>Créer la ronde</button></form>
-        <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy ? 'disabled' : '' %>>Essayer</button></form>
+        <form method="post" action="/asks/<%= a.id %>/try"><button type="submit" class="secondaire" <%= it.busy || p.error ? 'disabled' : '' %>>Essayer</button></form>
       </div>
       <p class="aide">« Essayer » la lance une fois sans l’enregistrer. Tu pourras toujours la faire modifier par Claude ensuite.</p>
     <% } %>

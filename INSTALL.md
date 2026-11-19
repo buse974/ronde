@@ -309,7 +309,8 @@ claude mcp add --scope user --transport http ronde https://ronde.example.com/mcp
 Puis dans Claude Code : `/mcp` → `ronde` → « Authenticate ». Le navigateur s'ouvre sur ronde : connecte-toi avec le compte admin, puis clique sur « Autoriser ». Aucun token n'est à copier.
 
 - **Révoquer un accès :** **Réglages > Accès MCP**.
-- **Outils autorisés** pour une ronde créée ou essayée via MCP : **Réglages > Accès MCP** (par défaut `Read`, `Grep`, `Glob`).
+- **Outils autorisés** pour une ronde créée ou essayée via MCP : **Réglages > Outils proposables** (par défaut `Read`, `Grep`, `Glob`). C'est la liste unique des outils que Claude peut proposer, aussi utilisée par l'assistant de conception de l'interface. L'élargir vaut pour le MCP, **y compris `test_prompt`, qui exécute tout de suite sans validation dans l'interface**, et déverrouille la modification par MCP des rondes qui utilisent ces outils.
+- **Sécurité :** préfère des règles étroites (`Bash(php -v)`, `Bash(dpkg -l:*)`, `WebFetch(domain:php.net)`). Un nom d'outil seul (`Bash`, `WebFetch`) autorise toutes les règles de cet outil ; `Bash` donne un shell sous le compte dédié. Quand l'assistant signale une règle manquante, un bouton permet de l'ajouter d'un clic (règles étroites seulement) ; relis-la avant : `Bash(php:*)` autorise aussi `php -r`. Une ronde qui a besoin d'un outil hors liste peut toujours être créée dans le formulaire manuel.
 - **Clients acceptés :** l'enregistrement dynamique OAuth n'accepte que des redirections locales (`localhost`, `127.0.0.1`) et `https://claude.ai` / `https://claude.com`.
 
 ## 9. Données de l'hôte (modèles disque et SSH)

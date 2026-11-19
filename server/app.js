@@ -21,7 +21,8 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelconte
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { ASK_TOOLS, createAsks } from './asks.js';
 import { CHANNEL_TYPES, KEY_PLACES, MODES } from './channels.js';
-import { createMcpHandler, DEFAULT_MCP_TOOLS, mcpAllowedTools } from './mcp.js';
+import { createMcpHandler } from './mcp.js';
+import { addProposableTool, DEFAULT_PROPOSABLE_TOOLS, isNarrowRule, PROPOSABLE_TOOLS_KEY, proposableTools, proposalToolsError } from './tool-policy.js';
 import { createOAuthProvider, MCP_SCOPE } from './oauth.js';
 import { buildDial, buildStrip, createHelpers, groupRuns, summarize } from './helpers.js';
 import { classify, runClaude } from './runner.js';
@@ -271,6 +272,12 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
     });
   });
 
+  const convErrorOf = (code) =>
+    ({
+      busy: 'Trop de conversations avec Claude en cours, réessaie dans un instant.',
+      refused: 'Refusé : la ronde proposée utilise des outils hors de la liste proposable. L’administrateur peut les ajouter dans Réglages > Outils proposables, ou modifier la ronde dans son formulaire.',
+    })[code] ?? null;
+
   // --- Demander à Claude --------------------------------------------------
   app.post('/asks', (req, res) => {
     const text = String(req.body.prompt ?? '').trim();
@@ -330,6 +337,9 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
     const { error, ...fields } = p;
     const parsed = taskSchema(config.timezone).safeParse({ ...fields, active: true, notify: true });
     if (!parsed.success) return res.status(400).view('ask', { ask: req.ask, busy: asks.busy, error: `Proposition invalide : ${parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ')}` });
+    // Liste relue au clic : elle a pu être réduite depuis que la proposition s'affiche.
+    const refused = proposalToolsError(parsed.data.allowed_tools, store);
+    if (refused) return res.status(400).view('ask', { ask: req.ask, busy: asks.busy, error: `Création refusée : ${refused}.` });
     const id = store.createTask(parsed.data, { by: 'ui', askId: req.ask.id });
     res.redirect(`/tasks/${id}`);
   });
@@ -358,14 +368,37 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
     const task = a.task_id ? store.getTask(a.task_id) : null;
     if (!task || task.archived_at || !a.proposal || a.proposal.error) return res.redirect(`/asks/${a.id}`);
     const { error, ...p } = a.proposal;
+    const refused = proposalToolsError(p.allowed_tools ?? [], store, task.allowed_tools);
+    if (refused) return res.redirect(`/tasks/${task.id}?claude=refused#claude`);
     store.updateTask(task.id, { ...task, name: p.name, prompt: p.prompt, cron: p.cron, allowed_tools: p.allowed_tools, max_turns: p.max_turns, timeout_sec: p.timeout_sec }, { by: 'ui' });
     asks.clearProposal(a.id);
     res.redirect(`/tasks/${task.id}?tuned=1`);
   });
 
+  // Bouton « Ajouter … aux outils proposables » : la règle que Claude a signalée comme manquante.
+  // C'est le clic de l'administrateur qui l'ajoute, jamais Claude ; puis la conversation reprend.
+  app.post('/asks/:id/tools', loadAsk, (req, res) => {
+    const a = req.ask;
+    const rule = String(req.body.rule ?? '').trim();
+    const back = a.task_id ? (req.body.back === 'run' && a.run_id ? `/runs/${a.run_id}#claude` : `/tasks/${a.task_id}#claude`) : `/asks/${a.id}`;
+    if (!a.missing_tools.includes(rule) || !isNarrowRule(rule)) return res.redirect(back);
+    addProposableTool(store, rule);
+    // Question libre : la règle sert à une ronde, on passe en conception.
+    const text = `J'ai ajouté ${rule} aux outils proposables.${a.kind === 'exec' && !a.task_id ? ' Fais-en une ronde.' : ''}`;
+    asks.reply(a.id, text, a.kind === 'exec' && !a.task_id ? { kind: 'design' } : {});
+    res.redirect(back);
+  });
+
   app.post('/asks/:id/try', loadAsk, (req, res) => {
     const p = req.ask.proposal;
     if (!p) return res.redirect(`/asks/${req.ask.id}`);
+    // Un essai exécute les outils tout de suite : même contrôle que la création.
+    const task = req.ask.task_id ? store.getTask(req.ask.task_id) : null;
+    const refused = proposalToolsError(p.allowed_tools ?? ['Read'], store, task?.allowed_tools ?? []);
+    if (refused) {
+      if (task) return res.redirect(`/tasks/${task.id}?claude=refused#claude`);
+      return res.status(400).view('ask', { ask: req.ask, busy: asks.busy, error: `Essai refusé : ${refused}.` });
+    }
     const started = asks.start('exec', p.prompt, p.allowed_tools ?? ['Read'], { raw: true, title: `Essai : ${p.name}` });
     if (!started) return res.status(409).view('ask', { ask: req.ask, busy: true, error: 'Trop de conversations avec Claude en cours, réessaie dans un instant.' });
     res.redirect(`/asks/${started.id}`);
@@ -412,7 +445,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
       taskChannels: channels.forTask(req.task.id),
       modes: MODES,
       askBusy: asks.busy,
-      convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
+      convError: convErrorOf(req.query.claude),
     });
   });
 
@@ -424,7 +457,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
     const back = runId ? `/runs/${runId}` : `/tasks/${req.task.id}`;
     const text = String(req.body.text ?? '').trim().slice(0, 20_000);
     if (!text) return res.redirect(`${back}#claude`);
-    const r = asks.talk(req.task.id, text, { runId, tools: mcpAllowedTools(store), title: `${req.task.name} : ${text}` });
+    const r = asks.talk(req.task.id, text, { runId, tools: ASK_TOOLS, title: `${req.task.name} : ${text}` });
     res.redirect(`${back}${r.error ? '?claude=busy' : ''}#claude`);
   });
 
@@ -503,7 +536,7 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
       taskChannels: channels.forTask(run.task_id),
       modes: MODES,
       askBusy: asks.busy,
-      convError: req.query.claude === 'busy' ? 'Trop de conversations avec Claude en cours, réessaie dans un instant.' : null,
+      convError: convErrorOf(req.query.claude),
     });
   });
 
@@ -530,11 +563,11 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
       smtpFrom: config.smtp.from,
       mcp: { ...mcp, url: mcp.url.toString() },
       grants: oauth.listGrants(),
-      mcpTools: mcpAllowedTools(store),
+      proposableTools: proposableTools(store),
       channels: channels.list(),
       channelTypes: CHANNEL_TYPES,
       keyPlaces: KEY_PLACES,
-      defaultMcpTools: DEFAULT_MCP_TOOLS,
+      defaultProposableTools: DEFAULT_PROPOSABLE_TOOLS,
       errors: {},
       notice: null,
       ...extra,
@@ -582,14 +615,15 @@ export function createApp({ store, config, claudeAuth, mailer, executor, channel
     }),
   );
 
-  app.post('/settings/mcp/tools', (req, res) => {
-    const rules = parseToolList(req.body.mcp_tools);
+  // Outils que Claude peut proposer pour une ronde : conception dans l'interface et MCP.
+  app.post('/settings/tools', (req, res) => {
+    const rules = parseToolList(req.body.tools);
     if (rules.some((r) => !/^[A-Za-z][A-Za-z0-9_]*(\(.{1,200}\))?$/.test(r))) {
       res.status(400);
-      return settingsView(res, { errors: { mcp_tools: 'Règle d’outil invalide (ex : Read, Bash(df:*)).' } });
+      return settingsView(res, { errors: { tools: 'Règle d’outil invalide (ex : Read, Bash(php -v), WebFetch).' } });
     }
-    store.setSetting('mcp_allowed_tools', JSON.stringify(rules));
-    settingsView(res, { notice: 'Outils autorisables via MCP enregistrés.' });
+    store.setSetting(PROPOSABLE_TOOLS_KEY, JSON.stringify(rules));
+    settingsView(res, { notice: 'Outils proposables enregistrés : ils valent pour l’interface et pour le MCP.' });
   });
 
   app.post('/settings/mcp/grants/:id/revoke', (req, res) => {

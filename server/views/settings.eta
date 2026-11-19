@@ -41,6 +41,28 @@
   </div>
 </section>
 
+<section class="reglage" aria-labelledby="r-outils" id="outils">
+  <div>
+    <h2 id="r-outils">Outils proposables</h2>
+    <p>Les outils que Claude peut proposer pour une ronde, quand il la conçoit avec toi dans l'interface ou via MCP. Hors de cette liste, il te dit quelle règle manque ; le formulaire manuel, lui, accepte toutes les règles.</p>
+    <p class="discret">Pendant la conversation, Claude n'utilise lui-même que Read, Glob et WebFetch : cette liste ne lui donne rien à exécuter.</p>
+  </div>
+  <div>
+    <form method="post" action="/settings/tools">
+      <label>Règles, une par ligne
+        <textarea name="tools" rows="4" <%~ e.tools ? 'aria-invalid="true"' : '' %>><%= it.proposableTools.join('\n') %></textarea>
+        <small class="<%= e.tools ? 'erreur' : '' %>"><%= e.tools ?? 'Par défaut : ' + it.defaultProposableTools.join(', ') + '.' %></small>
+      </label>
+      <ul class="petit">
+        <li><strong>Préfère des règles étroites</strong> : <code>Bash(php -v)</code>, <code>Bash(dpkg -l:*)</code>, <code>WebFetch(domain:php.net)</code>. Un nom d'outil seul (<code>Bash</code>, <code>WebFetch</code>) autorise toutes les règles de cet outil : <code>Bash</code> donne un shell complet sous le compte dédié.</li>
+        <li><strong>Vaut aussi pour le MCP</strong>, y compris <code>test_prompt</code>, qui exécute le prompt tout de suite avec ces outils, sans validation dans l'interface.</li>
+        <li>Élargir la liste <strong>déverrouille la modification par MCP</strong> des rondes qui utilisent ces outils (une ronde dont un outil est hors liste ne se modifie que dans l'interface).</li>
+      </ul>
+      <button type="submit">Enregistrer les outils</button>
+    </form>
+  </div>
+</section>
+
 <section class="reglage" aria-labelledby="r-mcp">
   <div>
     <h2 id="r-mcp">Accès MCP</h2>
@@ -75,13 +97,6 @@
     </div>
     <% } %>
 
-    <form method="post" action="/settings/mcp/tools" style="margin-top:1.75rem">
-      <label>Outils que Claude peut donner à une ronde via MCP, un par ligne
-        <textarea name="mcp_tools" rows="3" <%~ e.mcp_tools ? 'aria-invalid="true"' : '' %>><%= it.mcpTools.join('\n') %></textarea>
-        <small class="<%= e.mcp_tools ? 'erreur' : '' %>"><%= e.mcp_tools ?? 'Par défaut : ' + it.defaultMcpTools.join(', ') + '. Bash, Write ou Edit donnent un shell ou l’écriture dans le conteneur : une ronde qui les utilise ne peut alors plus être modifiée via MCP.' %></small>
-      </label>
-      <button type="submit">Enregistrer les outils</button>
-    </form>
   <% } %>
   </div>
 </section>

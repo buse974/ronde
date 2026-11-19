@@ -470,6 +470,8 @@ button[disabled] { opacity: 0.45; cursor: not-allowed; }
 .carte h2 { font-size: var(--step-1); margin: 0 0 0.5rem; }
 .carte p { font-size: var(--step--1); }
 .carte .surtitre { text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: var(--brume); margin: 0 0 0.3rem; }
+.carte.manque { margin: 1rem 0; border-color: var(--alerte); }
+.carte.manque .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .carte.conseillee .surtitre { color: var(--ras); }
 .carte details { border: 0; padding: 0; margin: 0 0 0.8rem; }
 .carte pre { max-height: 16rem; overflow: auto; font-size: var(--step--1); }

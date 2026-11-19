@@ -4,22 +4,10 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { templatesFor } from './examples.js';
-import { classify, runClaude, toolName } from './runner.js';
+import { classify, runClaude } from './runner.js';
+import { forbiddenRules, proposableTools } from './tool-policy.js';
 import { cronError, nextRuns } from './scheduler.js';
 import { taskSchema } from './validation.js';
-
-export const DEFAULT_MCP_TOOLS = ['Read', 'Grep', 'Glob'];
-
-/** Outils qu'une ronde créée ou modifiée via MCP a le droit d'utiliser (Réglages). */
-export function mcpAllowedTools(store) {
-  const raw = store.getSetting('mcp_allowed_tools');
-  return raw ? JSON.parse(raw) : DEFAULT_MCP_TOOLS;
-}
-
-/** Règles refusées par la politique MCP. */
-export function forbiddenRules(rules, allowed) {
-  return rules.filter((r) => !allowed.includes(r) && !allowed.includes(toolName(r)));
-}
 
 const ok = (data) => ({ content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] });
 const fail = (message) => ({ isError: true, content: [{ type: 'text', text: message }] });
@@ -102,12 +90,12 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
   function validate(values) {
     const parsed = taskSchema(config.timezone).safeParse(values);
     if (!parsed.success) return { error: parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join('\n') };
-    const forbidden = forbiddenRules(parsed.data.allowed_tools, mcpAllowedTools(store));
+    const forbidden = forbiddenRules(parsed.data.allowed_tools, proposableTools(store));
     if (forbidden.length) {
       return {
         error:
           `Outils non autorisés via MCP : ${forbidden.join(', ')}. ` +
-          `Autorisés : ${mcpAllowedTools(store).join(', ')}. L’administrateur peut élargir cette liste dans Réglages > Accès MCP, ou créer la ronde dans l’interface.`,
+          `Autorisés : ${proposableTools(store).join(', ')}. L’administrateur peut élargir cette liste dans Réglages > Outils proposables, ou créer la ronde dans le formulaire de l’interface.`,
       };
     }
     return { data: parsed.data };
@@ -226,7 +214,7 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
         },
       },
       async ({ prompt, allowed_tools, max_turns, timeout_sec }) => {
-        const forbidden = forbiddenRules(allowed_tools, mcpAllowedTools(store));
+        const forbidden = forbiddenRules(allowed_tools, proposableTools(store));
         if (forbidden.length) return fail(`Outils non autorisés via MCP : ${forbidden.join(', ')}.`);
         const auth = claudeAuth.resolve();
         if (!auth) return fail('Aucun token Claude configuré dans ronde (Réglages).');
@@ -279,9 +267,9 @@ export function createMcpHandler({ store, config, claudeAuth, executor, oauth, c
         if (!t || t.archived_at) return fail(`Ronde #${id} introuvable${t ? ' (archivée : restaure-la dans ronde)' : ''}.`);
         // Une ronde qui utilise des outils hors politique MCP (ajoutés dans l'interface) est
         // verrouillée : la modifier via MCP permettrait de détourner ces outils avec un autre prompt.
-        const locked = forbiddenRules(t.allowed_tools, mcpAllowedTools(store));
+        const locked = forbiddenRules(t.allowed_tools, proposableTools(store));
         if (locked.length) {
-          return fail(`Ronde #${id} verrouillée pour MCP : elle utilise ${locked.join(', ')}, hors des outils autorisables via MCP. Modifie-la dans l’interface.`);
+          return fail(`Ronde #${id} verrouillée pour MCP : elle utilise ${locked.join(', ')}, hors de la liste des outils proposables (Réglages > Outils proposables). Modifie-la dans l’interface.`);
         }
         const merged = { ...t, ...Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined)) };
         const { data, error } = validate(merged);

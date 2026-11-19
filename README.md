@@ -100,7 +100,8 @@ Dans Claude Code : `/mcp` → ronde → s'authentifier. Le navigateur s'ouvre su
 Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_host_data`, `test_prompt`, `create_ronde`, `update_ronde`, `set_active`, `run_ronde`, `get_run`, `list_runs`, `list_canaux`, `create_canal`, `test_canal`, `set_canaux_ronde`. Pas de suppression via MCP.
 
 - OAuth 2.1 (PKCE, enregistrement dynamique limité aux redirections locales et claude.ai) : exige une `PUBLIC_URL` en **HTTPS** (ou localhost).
-- Une ronde créée ou essayée via MCP ne peut utiliser que les outils autorisés dans **Réglages > Accès MCP** (par défaut `Read`, `Grep`, `Glob`).
+- Une ronde créée ou essayée via MCP ne peut utiliser que les **outils proposables** (**Réglages > Outils proposables**, par défaut `Read`, `Grep`, `Glob`). C'est la même liste que pour l'assistant de conception de l'interface : l'élargir vaut aussi pour le MCP, y compris `test_prompt`, qui exécute le prompt **tout de suite**, sans validation dans l'interface.
+- Une ronde qui utilise un outil hors de cette liste (ajouté dans le formulaire manuel) est verrouillée pour MCP : elle ne se modifie que dans l'interface. Élargir la liste la déverrouille.
 
 ## Sécurité
 
@@ -109,6 +110,8 @@ Outils : `list_rondes`, `get_ronde`, `list_templates`, `preview_cron`, `list_hos
 - Le token Claude est chiffré en base (AES-256-GCM). La clé dérive d'`APP_SECRET`, généré au premier démarrage dans `secret.key` (à côté de la base) si la variable n'est pas fournie. **Sauvegarder le dossier de données revient à sauvegarder ce secret.**
 - UI : un compte admin (argon2), cookie de session `HttpOnly` + `SameSite=Strict`, contrôle de l'origine sur les requêtes POST, limitation des tentatives de connexion.
 - Un outil comme `Bash` donne à Claude un shell (dans le conteneur, ou sur le serveur sans Docker, toujours sous le compte dédié) : n'autorise que ce dont la tâche a besoin, de préférence avec des règles restreintes (`Bash(df:*)`).
+- **Outils proposables** (**Réglages > Outils proposables**, par défaut `Read`, `Grep`, `Glob`) : ce que Claude peut proposer pour une ronde, dans l'interface comme via MCP. Une installation n'y gagne rien sans action de l'administrateur. Préfère des règles étroites (`Bash(php -v)`, `Bash(dpkg -l:*)`, `WebFetch(domain:php.net)`) : un nom d'outil seul (`Bash`, `WebFetch`) autorise toutes les règles de cet outil. ronde refuse côté serveur, au moment du clic, toute proposition hors liste (création, application, essai) ; pendant le réglage d'une ronde, les règles qu'elle porte déjà restent permises. Hors liste, l'assistant dit quelle règle manque et l'interface affiche un bouton « Ajouter `Bash(php -m)` » : c'est **ton clic** qui l'ajoute à la liste, jamais Claude, et seulement pour une règle étroite (pas de nom nu, ni `Bash(*)`). Attention, une règle étroite en apparence peut rester large : `Bash(php:*)` permet `php -r` (du code arbitraire), `Bash(sh:*)` un shell. Le formulaire manuel accepte toutes les règles.
+- Pendant la conversation, l'assistant n'utilise lui-même que `Read`, `Glob` et `WebFetch` (et les questions libres `Read`, `Grep`, `Glob`, `WebFetch`) : la liste proposable ne lui donne rien à exécuter.
 
 ## Modèles et données de l'hôte
 

@@ -1,13 +1,17 @@
 import fs from 'node:fs';
 import { nowIso } from './db.js';
 import { classify, isRas, runClaude } from './runner.js';
+import { forbiddenRules, missingRules, proposableTools, proposalToolsError } from './tool-policy.js';
 import { taskSchema } from './validation.js';
 
 const HISTORY = 20;
 const EXEC_TIMEOUT_SEC = 300;
 const DESIGN_TIMEOUT_SEC = 240;
 
-/** Outils proposés dans la zone « Demander à Claude ». */
+/**
+ * Outils que Claude utilise lui-même pour répondre à une question libre (« Demander à Claude »).
+ * À ne pas confondre avec les outils qu'il peut proposer pour une ronde : proposableTools(store).
+ */
 export const ASK_TOOLS = ['Read', 'Grep', 'Glob'];
 export const ASK_TIMEOUT_MIN = { exec: EXEC_TIMEOUT_SEC / 60, design: DESIGN_TIMEOUT_SEC / 60 };
 
@@ -92,11 +96,12 @@ export function whereContext({ hostDataDir, inContainer = true }) {
     : `tu tournes directement sur le serveur Linux de « ronde », sous un compte de service sans privilège, sans personne pour te répondre. Des données relevées toutes les 15 minutes (disque, fail2ban…) sont dans ${hostDataDir}, lisibles avec l'outil Read`;
 }
 
-export function execPrompt({ text, hostDataDir, inContainer = true, tools, history = [], channels = [] }) {
+export function execPrompt({ text, hostDataDir, inContainer = true, tools, proposable = [], history = [], channels = [] }) {
   const previous = history.length ? `Échanges précédents de cette conversation :\n\n${transcriptOf(history)}\n\n` : '';
   return `Contexte : ${whereContext({ hostDataDir, inContainer })} :
 ${hostDataListing(hostDataDir)}
-Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}.
+Outils disponibles : ${tools.length ? tools.join(', ') : 'aucun'}. Tu ne peux lancer aucune commande ici.
+Si la demande exige une commande (php -m, dpkg -l…) : dis que tu ne peux pas la lancer dans cette conversation, mais qu'une ronde le pourra, et mets "ronde": true. Outils qu'une ronde peut utiliser (liste réglée par l'administrateur) : ${proposable.join(', ') || 'aucun'}. Si la règle nécessaire n'y est pas, dis laquelle. ${MISSING_RULE}
 Réponds en français, de façon concise, en citant les chiffres et l'heure de la mesure. Si l'information demandée n'est pas dans ces données, dis-le simplement et indique quelle donnée il faudrait relever.
 
 ${channels.length ? `${channelsContext(channels)}\n\n` : ''}Si l'administrateur demande explicitement de créer une ronde ou un oneshot (« crée-moi une ronde qui… », « fais-en un oneshot… »), ne fais pas le travail ici : réponds en une phrase que tu prépares la ronde, et mets "creer": true dans le bloc final. L'interface enchaîne aussitôt sur sa conception, dans cette même conversation.
@@ -125,6 +130,18 @@ export function visibleText(text) {
   return (i >= 0 ? text.slice(0, i) : String(text ?? '')).trim();
 }
 
+/** Comment signaler une règle qui manque : l'interface en fait un bouton, l'administrateur décide. */
+const MISSING_RULE = `Ajoute alors au bloc json final "manque": ["Bash(php -m)"] : la règle exacte et étroite (une commande ou un préfixe précis, jamais un nom d'outil seul comme Bash, ni Bash(*)). Tu ne peux pas l'ajouter toi-même.`;
+
+/**
+ * Consigne sur les outils d'une ronde : la liste réglée par l'administrateur, et quoi dire
+ * quand le besoin la dépasse (jamais « impossible » : la règle qui manque et les deux issues).
+ */
+export function toolsRule(allowedTools, kept = []) {
+  const extra = kept.filter((r) => !allowedTools.includes(r));
+  return `Outils qu'une ronde peut utiliser (liste réglée par l'administrateur) : ${allowedTools.join(', ') || 'aucun'}.${extra.length ? ` Cette ronde porte déjà aussi : ${extra.join(', ')} ; tu peux les garder ou les retirer.` : ''} Ne propose que des règles de cette liste, à l'identique ; un nom d'outil seul (Bash, WebFetch) y autorise toutes les règles de cet outil. Si le besoin demande un outil ou une règle hors liste (par exemple Bash(php -v), Bash(dpkg -l:*), WebFetch), ne dis pas que c'est impossible : dis quelle règle exacte manque, et que l'administrateur peut soit l'ajouter (bouton sous ta réponse, ou Réglages > Outils proposables), soit créer la ronde lui-même dans le formulaire manuel. ${MISSING_RULE} Ne mets jamais une règle hors liste dans une proposition : elle serait refusée tant qu'elle n'est pas ajoutée.`;
+}
+
 /** Prompt d'un tour de conception : consignes, données disponibles, conversation. */
 export function designPrompt({ messages, timezone, hostDataDir, allowedTools, channels = [] }) {
   const transcript = transcriptOf(messages);
@@ -134,7 +151,7 @@ Règles d'une ronde :
 - Le prompt de la ronde doit demander de répondre exactement « RAS » s'il n'y a rien à signaler. Toute autre réponse déclenche une alerte par mail : elle doit alors être courte et donner les chiffres utiles.
 - Les données du serveur sont lisibles dans ${hostDataDir} avec l'outil Read. Fichiers disponibles :
 ${hostDataListing(hostDataDir)}
-- Outils qu'une ronde peut utiliser : ${allowedTools.join(', ')}. N'en propose pas d'autres.
+- ${toolsRule(allowedTools)}
 - Fréquence : expression cron à 5 champs, fuseau ${timezone}. Chaîne vide pour une ronde manuelle.
 - ${channelsContext(channels)} Si l'administrateur veut recevoir la réponse quelque part, ou si la ronde appelle un canal API, ajoute "canaux": [{"nom": "...", "quand": "alerte" | "toujours"}, {"nom": "<canal API>", "requetes": [...]}] à la ronde proposée.
 
@@ -190,7 +207,8 @@ ${hostDataListing(hostDataDir)}
 
 Ta démarche :
 - Si l'administrateur demande pourquoi la ronde a répondu ainsi, explique-le à partir du prompt et des données (relis-les si c'est utile), en citant les chiffres.
-- S'il veut que la ronde se comporte autrement la prochaine fois, propose la ronde modifiée : garde ce qui marche, change seulement ce qui est nécessaire, et dis en une ou deux phrases ce que tu as changé. Outils autorisés : ${allowedTools.join(', ')}.
+- S'il veut que la ronde se comporte autrement la prochaine fois, propose la ronde modifiée : garde ce qui marche, change seulement ce qui est nécessaire, et dis en une ou deux phrases ce que tu as changé.
+- ${toolsRule(allowedTools, task.allowed_tools)}
 - S'il manque une information importante, pose au plus 2 questions courtes.
 - Tu peux agir sur la ronde, mais UNIQUEMENT sur accord explicite de l'administrateur (« ok », « vas-y », « applique », « mets-la en pause », « remets-la active »…), et seulement pour ce qui vient d'être discuté. Actions : « modifier » (applique une version de la ronde, tous les champs repris), « canaux » (remplace la liste des canaux de la ronde, parmi les canaux configurés), « pause », « reprendre », « archiver », « restaurer » (sort des archives ; ajoute "active": true si on te demande aussi de la réactiver). Une ronde archivée ne peut qu'être restaurée.
 - Quand tu agis, dis-le en une phrase claire (« C'est fait : alerte au-dessus de 95 %, /boot ignoré. »), sans roman, sauf si on te demande le détail.
@@ -254,6 +272,11 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
         return [{ role: 'user', text: row.title }, ...(row.result ? [{ role: 'claude', text: row.result }] : [])];
       })(),
       proposal: row.proposal ? JSON.parse(row.proposal) : null,
+      // Règles signalées par la dernière réponse de Claude, pas encore dans la liste proposable.
+      missing_tools: (() => {
+        const last = JSON.parse(row.messages).findLast((m) => m.role !== 'history');
+        return last?.role === 'claude' && last.missing ? forbiddenRules(last.missing, proposableTools(store)) : [];
+      })(),
       is_ras: row.is_ras == null ? null : !!row.is_ras,
     };
 
@@ -314,7 +337,7 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     const chans = channels ? channels.list() : [];
     const full = raw
       ? question
-      : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, inContainer: config.inContainer, tools, channels: chans });
+      : execPrompt({ text: question, history: ask.messages.slice(0, -1), hostDataDir: config.hostDataDir, inContainer: config.inContainer, tools, proposable: proposableTools(store), channels: chans });
     // Question de l'accueil : avec l'administrateur, en direct ; il peut essayer les canaux API (et lire leur doc).
     const { r, out } = await call(id, full, raw ? tools : [...tools, 'WebFetch'], 10, EXEC_TIMEOUT_SEC, { apiChannels: !raw });
     addUsage(id, r);
@@ -329,7 +352,7 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
         result: text,
         is_ras: isRas(text) ? 1 : 0,
         suggest_ronde: block?.ronde === true ? 1 : 0,
-        messages: JSON.stringify([...freshMessages(id), { role: 'claude', text }]),
+        messages: JSON.stringify([...freshMessages(id), claudeMessage(text, block)]),
         error: null,
       });
       // Demande explicite de création : on enchaîne sur la conception, dans la même conversation.
@@ -338,6 +361,12 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
         await runDesignTurn(id);
       }
     }
+  }
+
+  /** Réponse de Claude, avec les règles qu'il signale comme manquantes (bouton d'ajout). */
+  function claudeMessage(text, block) {
+    const missing = missingRules(block?.manque, store);
+    return { role: 'claude', text, ...(missing.length ? { missing } : {}) };
   }
 
   /** Messages relus en base : une entrée d'historique a pu s'ajouter pendant que Claude répondait. */
@@ -357,9 +386,10 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
       run_at: base.run_at ?? null,
     };
     const parsed = taskSchema(config.timezone).safeParse(candidate);
-    return parsed.success
-      ? { data: parsed.data }
-      : { data: candidate, error: parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ') };
+    if (!parsed.success) return { data: candidate, error: parsed.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' ; ') };
+    // Liste réglée par l'administrateur, plus les règles que la ronde existante porte déjà.
+    const error = proposalToolsError(parsed.data.allowed_tools, store, base.allowed_tools ? JSON.parse(base.allowed_tools) : []);
+    return error ? { data: parsed.data, error } : { data: parsed.data };
   }
 
   /** [{ nom, quand }] → [{ name, mode }], en vérifiant que chaque canal existe. */
@@ -408,8 +438,8 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
 
   async function runDesignTurn(id) {
     const ask = parse(q('SELECT * FROM asks WHERE id = ?').get(id));
-    const allowed = ask.allowed_tools;
-    const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: allowed, channels: channels ? channels.list() : [] };
+    // Relue à chaque tour : un changement dans les Réglages vaut dès le message suivant.
+    const ctx = { messages: ask.messages, timezone: config.timezone, hostDataDir: config.hostDataDir, allowedTools: proposableTools(store), channels: channels ? channels.list() : [] };
     let prompt;
     // Conversation rattachée à une ronde (réglage, ou conception terminée) : on parle de la ronde existante.
     if (ask.task_id) {
@@ -426,6 +456,8 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     } else {
       prompt = designPrompt(ctx);
     }
+    // Outils de Claude lui-même pendant la conversation, indépendants de la liste proposable :
+    // il peut proposer Bash(php -v) pour la ronde, jamais le lancer ici.
     // Conception et réglage : lire la doc d'une API (WebFetch) et essayer ses canaux.
     const { r } = await call(id, prompt, ['Read', 'Glob', 'WebFetch'], 12, DESIGN_TIMEOUT_SEC, { apiChannels: true });
     addUsage(id, r);
@@ -454,7 +486,7 @@ export function createAsks({ db, store, channels = null, relay = null, config, c
     const linked = !!current.task_id;
     update(id, {
       status: proposal ? 'proposal' : linked || acted ? 'done' : 'question',
-      messages: JSON.stringify([...current.messages, { role: 'claude', text, ...(proposal ? { proposal: true } : {}) }]),
+      messages: JSON.stringify([...current.messages, { ...claudeMessage(text, block), ...(proposal ? { proposal: true } : {}) }]),
       // Après une action, la proposition est appliquée (ou caduque) : on la retire.
       proposal: proposal ? JSON.stringify(proposal) : acted ? null : current.proposal ? JSON.stringify(current.proposal) : null,
       error: null,

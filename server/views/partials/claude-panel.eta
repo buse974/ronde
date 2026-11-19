@@ -26,6 +26,18 @@
       <% if (c.status === 'failed') { %><p class="note mal"><%= c.error %></p><% } %>
     <% } %>
 
+    <% if (c && !running && (c.missing_tools || []).length) { %>
+  <section class="carte manque" aria-label="Outils à ajouter">
+    <p class="surtitre">Outil manquant</p>
+    <p>Claude a besoin d'une règle hors des outils proposables. L'ajouter vaut pour toutes les conversations et pour le MCP, y compris <code>test_prompt</code>.</p>
+    <div class="actions">
+    <% c.missing_tools.forEach((rule) => { %>
+      <form method="post" action="/asks/<%= c.id %>/tools"><input type="hidden" name="rule" value="<%= rule %>"><% if (it.run) { %><input type="hidden" name="back" value="run"><% } %><button type="submit" <%= it.askBusy ? 'disabled' : '' %>>Ajouter <code><%= rule %></code></button></form>
+    <% }) %>
+    </div>
+    <p class="aide">Ou crée la ronde toi-même dans le formulaire manuel, qui accepte toutes les règles.</p>
+  </section>
+  <% } %>
     <% if (p) { %>
     <section class="carte modif">
       <p class="surtitre">Ronde modifiée</p>
@@ -35,11 +47,11 @@
         <dt>Outils</dt><dd><%= (p.allowed_tools || []).join(', ') || 'aucun' %></dd>
         <dt>Tours</dt><dd><%= p.max_turns %> au maximum</dd>
       </dl>
-      <% if (p.error) { %><p class="note attention">Proposition invalide : <%= p.error %></p><% } %>
+      <% if (p.error) { %><p class="note attention">Proposition invalide : <%= p.error %>. <a href="/tasks/<%= t.id %>/edit">Formulaire de la ronde</a></p><% } %>
       <details><summary>Nouveau prompt</summary><pre><%= p.prompt %></pre></details>
       <div class="actions">
         <form method="post" action="/asks/<%= c.id %>/apply"><button type="submit" <%= p.error || t.archived_at ? 'disabled' : '' %>>Appliquer</button></form>
-        <form method="post" action="/asks/<%= c.id %>/try"><button type="submit" class="secondaire" <%= it.askBusy ? 'disabled' : '' %>>Essayer d'abord</button></form>
+        <form method="post" action="/asks/<%= c.id %>/try"><button type="submit" class="secondaire" <%= it.askBusy || p.error ? 'disabled' : '' %>>Essayer d'abord</button></form>
       </div>
     </section>
     <% } %>

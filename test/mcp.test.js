@@ -185,12 +185,12 @@ describe('outils MCP', () => {
     expect((await call(app, tok, 'set_active', { id, active: false })).data.active).toBe(false);
   });
 
-  it('les outils autorisables se règlent dans les Réglages', async () => {
+  it('les outils proposables se règlent dans les Réglages et valent pour le MCP', async () => {
     const { app } = await installedApp();
     const { access_token: tok } = await connect(app);
     const admin = request.agent(app);
     await form(admin, '/login', { username: 'admin', password: PASSWORD });
-    await form(admin, '/settings/mcp/tools', { mcp_tools: 'Read\nBash(df:*)' });
+    await form(admin, '/settings/tools', { tools: 'Read\nBash(df:*)' });
     expect((await call(app, tok, 'create_ronde', { name: 'df', prompt: 'p', allowed_tools: ['Bash(df:*)'] })).isError).toBe(false);
     expect((await call(app, tok, 'create_ronde', { name: 'sh', prompt: 'p', allowed_tools: ['Bash'] })).isError).toBe(true);
   });

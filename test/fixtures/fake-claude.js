@@ -43,6 +43,17 @@ process.stdin.on('end', () => {
     case 'actarchiver': return out({ result: 'C’est fait : archivée.\n\n```json\n{"type": "action", "action": "archiver"}\n```' });
     case 'actrestaurer': return out({ result: 'C’est fait : elle repart.\n\n```json\n{"type": "action", "action": "restaurer", "active": true}\n```' });
     case 'designp': return out({ result: 'Voici ma proposition.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Sécurité SSH', prompt: 'Lis /host-metrics/fail2ban.txt. Réponds RAS si rien.', cron: '5 * * * *', allowed_tools: ['Read'], max_turns: 4 } }) + '\n```' });
+    // Outils proposables : propositions et actions avec des règles étroites.
+    case 'designphp': return out({ result: 'Voici ma proposition.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'PHP', prompt: 'Lance php -v. Réponds RAS si PHP 8.3.', cron: '0 8 * * *', allowed_tools: ['Read', 'Bash(php -v)'], max_turns: 4 } }) + '\n```' });
+    case 'actcreerphp': return out({ result: 'C’est fait : ronde PHP créée.\n\n```json\n' + JSON.stringify({ type: 'action', action: 'creer', ronde: { name: 'PHP', prompt: 'Lance php -v.', cron: '0 8 * * *', allowed_tools: ['Bash(php -v)'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
+    case 'actmodifierdf': return out({ result: 'C’est fait : seuil à 95 %.\n\n```json\n' + JSON.stringify({ type: 'action', action: 'modifier', ronde: { name: 'Disque', prompt: 'df -h. RAS sous 95 %.', cron: '0 * * * *', allowed_tools: ['Read', 'Bash(df:*)'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
+    case 'actmodifierphp': return out({ result: 'C’est fait : PHP vérifié aussi.\n\n```json\n' + JSON.stringify({ type: 'action', action: 'modifier', ronde: { name: 'Disque', prompt: 'df -h et php -v.', cron: '0 * * * *', allowed_tools: ['Read', 'Bash(df:*)', 'Bash(php -v)'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
+    case 'tunepdf': return out({ result: 'Je propose 95 %.\n\n```json\n' + JSON.stringify({ type: 'proposal', ronde: { name: 'Disque', prompt: 'df -h. RAS sous 95 %.', cron: '0 * * * *', allowed_tools: ['Bash(df:*)'], max_turns: 4, timeout_sec: 300 } }) + '\n```' });
+    case 'manque': return out({ result: 'Je ne peux pas lancer php -m ici ; une ronde le pourra avec Bash(php -m), qui n’est pas dans les outils proposables.\n\n```json\n' + JSON.stringify({ type: 'question', manque: ['Bash(php -m)', 'Bash', 'Bash(*)', 'Bash(:*)', 'Read', 42] }) + '\n```' });
+    case 'execmanque': return out({ result: 'Je ne peux pas lancer php -m dans cette conversation ; une ronde le pourra.\n\n```json\n' + JSON.stringify({ ronde: true, manque: ['Bash(php -m)'] }) + '\n```' });
+    case 'tunemanque': return out({ result: 'Il faudrait Bash(php -m).\n\n```json\n' + JSON.stringify({ type: 'answer', manque: ['Bash(php -m)'] }) + '\n```' });
+    // Renvoie les arguments et le prompt reçus (pour vérifier ce que ronde transmet à Claude).
+    case 'echo': return out({ result: `ARGS ${JSON.stringify(process.argv.slice(2))}\nPROMPT ${input}\n\n\`\`\`json\n{"type": "question"}\n\`\`\`` });
     case 'fork':
       // Descendant qui hérite de stdout : sans kill du groupe, « close » n'arrive jamais.
       return import('node:child_process').then(({ spawn }) => {
