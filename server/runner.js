@@ -43,6 +43,17 @@ export function buildEnv({ auth, home, timezone, path = '/usr/local/sbin:/usr/lo
   return env;
 }
 
+/**
+ * Ajoute l'heure du passage au prompt : claude -p ne la connaît pas, et une ronde
+ * qui analyse « les 30 dernières minutes » doit pouvoir caler sa fenêtre dessus.
+ * En fin de prompt, pour ne pas changer son début d'un passage à l'autre.
+ */
+export function withClock(prompt, timezone, now = new Date()) {
+  const fmt = new Intl.DateTimeFormat('sv-SE', { timeZone: timezone, dateStyle: 'short', timeStyle: 'medium' });
+  const zone = timezone ? ` (${timezone})` : '';
+  return `${prompt}\n\n[ronde] Date et heure de ce passage : ${fmt.format(now)}${zone}.`;
+}
+
 const RAS = /^\s*ras\s*[.!]*\s*$/i;
 export const isRas = (text) => typeof text === 'string' && RAS.test(text);
 
@@ -272,6 +283,6 @@ export function runClaude({ prompt, allowedTools, maxTurns, timeoutSec, auth, co
     child.on('exit', () => active.delete(child));
     child.on('close', (code) => finish(code));
     child.stdin.on('error', () => {}); // EPIPE si claude se termine sans lire stdin
-    child.stdin.end(prompt);
+    child.stdin.end(withClock(prompt, timezone, new Date(started)));
   });
 }

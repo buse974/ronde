@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildArgs, buildEnv, classify, isRas, parseOutput } from '../server/runner.js';
+import { buildArgs, buildEnv, classify, isRas, parseOutput, withClock } from '../server/runner.js';
 import { setup, task } from './helpers.js';
 
 const json = (o) => JSON.stringify({ is_error: false, result: 'RAS', ...o });
@@ -7,6 +7,16 @@ const json = (o) => JSON.stringify({ is_error: false, result: 'RAS', ...o });
 describe('isRas', () => {
   it.each(['RAS', 'ras', ' RAS.\n', 'RAS !', 'Ras!!'])('accepte %j', (t) => expect(isRas(t)).toBe(true));
   it.each(['', 'RAS mais disque plein', 'Rien à signaler', null, 'RAS\nsauf X'])('refuse %j', (t) => expect(isRas(t)).toBe(false));
+});
+
+describe('withClock', () => {
+  it('ajoute l’heure du passage dans le fuseau, à la fin du prompt', () => {
+    const p = withClock('Lis le log.', 'Europe/Paris', new Date('2026-11-24T13:30:05Z'));
+    expect(p).toBe('Lis le log.\n\n[ronde] Date et heure de ce passage : 2026-11-24 14:30:05 (Europe/Paris).');
+  });
+  it('fonctionne sans fuseau', () => {
+    expect(withClock('x', undefined, new Date())).toMatch(/^x\n\n\[ronde\] Date et heure de ce passage : \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.$/);
+  });
 });
 
 describe('classify', () => {
